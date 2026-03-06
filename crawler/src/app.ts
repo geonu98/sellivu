@@ -1,5 +1,5 @@
 import express from "express";
-import crawlRoutes from "./crawlRoutes";
+import crawlRoutes from "./routes/crawlRoutes"
 
 const app = express();
 const PORT = 3001;
