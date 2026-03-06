@@ -1,5 +1,7 @@
 package com.sellivu.backend.analysis.entity;
 
+import com.sellivu.backend.platform.ProductUrlInfo;
+import com.sellivu.backend.product.entity.Product;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -17,6 +19,10 @@ public class AnalysisJob {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "product_id", nullable = false)
+    private Product product;
 
     @Column(name = "requested_url", nullable = false, columnDefinition = "TEXT")
     private String requestedUrl;
@@ -42,6 +48,7 @@ public class AnalysisJob {
 
     @Builder
     private AnalysisJob(
+            Product product,
             String requestedUrl,
             AnalysisJobStatus status,
             String errorCode,
@@ -50,6 +57,7 @@ public class AnalysisJob {
             LocalDateTime finishedAt,
             LocalDateTime createdAt
     ) {
+        this.product = product;
         this.requestedUrl = requestedUrl;
         this.status = status;
         this.errorCode = errorCode;
@@ -59,11 +67,28 @@ public class AnalysisJob {
         this.createdAt = createdAt;
     }
 
-    public static AnalysisJob create(String requestedUrl) {
+    public static AnalysisJob create(Product product, ProductUrlInfo urlInfo) {
         return AnalysisJob.builder()
-                .requestedUrl(requestedUrl)
+                .product(product)
+                .requestedUrl(urlInfo.getOriginalUrl())
                 .status(AnalysisJobStatus.QUEUED)
                 .createdAt(LocalDateTime.now())
                 .build();
+    }
+
+    public void startCrawling() {
+        this.status = AnalysisJobStatus.CRAWLING;
+        this.startedAt = LocalDateTime.now();
+    }
+
+    public void complete() {
+        this.status = AnalysisJobStatus.COMPLETED;
+        this.finishedAt = LocalDateTime.now();
+    }
+
+    public void fail(String errorMessage) {
+        this.status = AnalysisJobStatus.FAILED;
+        this.errorMessage = errorMessage;
+        this.finishedAt = LocalDateTime.now();
     }
 }
