@@ -8,6 +8,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -36,6 +37,24 @@ public class Product {
     @Column(name = "normalized_url", nullable = false, columnDefinition = "TEXT")
     private String normalizedUrl;
 
+    @Column(name = "product_name", length = 500)
+    private String productName;
+
+    @Column(name = "price")
+    private Integer price;
+
+    @Column(name = "rating", precision = 3, scale = 2)
+    private BigDecimal rating;
+
+    @Column(name = "review_count")
+    private Integer reviewCount;
+
+    @Column(name = "thumbnail_url", columnDefinition = "TEXT")
+    private String thumbnailUrl;
+
+    @Column(name = "last_crawled_at")
+    private LocalDateTime lastCrawledAt;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -46,6 +65,12 @@ public class Product {
             String externalProductId,
             String originalUrl,
             String normalizedUrl,
+            String productName,
+            Integer price,
+            BigDecimal rating,
+            Integer reviewCount,
+            String thumbnailUrl,
+            LocalDateTime lastCrawledAt,
             LocalDateTime createdAt
     ) {
         this.platform = platform;
@@ -53,6 +78,12 @@ public class Product {
         this.externalProductId = externalProductId;
         this.originalUrl = originalUrl;
         this.normalizedUrl = normalizedUrl;
+        this.productName = productName;
+        this.price = price;
+        this.rating = rating;
+        this.reviewCount = reviewCount;
+        this.thumbnailUrl = thumbnailUrl;
+        this.lastCrawledAt = lastCrawledAt;
         this.createdAt = createdAt;
     }
 
@@ -65,5 +96,20 @@ public class Product {
                 .normalizedUrl(urlInfo.getNormalizedUrl())
                 .createdAt(LocalDateTime.now())
                 .build();
+    }
+
+    public void updateProductInfo(
+            String productName,
+            Integer price,
+            BigDecimal rating,
+            Integer reviewCount,
+            String thumbnailUrl
+    ) {
+        this.productName = productName;
+        this.price = price;
+        this.rating = rating;
+        this.reviewCount = reviewCount;
+        this.thumbnailUrl = thumbnailUrl;
+        this.lastCrawledAt = LocalDateTime.now();
     }
 }

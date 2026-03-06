@@ -5,6 +5,7 @@ import com.sellivu.backend.platform.CommercePlatform;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Getter
@@ -17,6 +18,14 @@ public class GetAnalysisJobResponse {
     private CommercePlatform platform;
     private String storeName;
     private String externalProductId;
+
+    private String productName;
+    private Integer price;
+    private BigDecimal rating;
+    private Integer reviewCount;
+    private String thumbnailUrl;
+    private LocalDateTime lastCrawledAt;
+
     private AnalysisJobStatus status;
     private LocalDateTime createdAt;
     private LocalDateTime startedAt;
