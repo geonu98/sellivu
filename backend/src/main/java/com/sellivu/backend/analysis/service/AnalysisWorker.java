@@ -53,7 +53,7 @@ public class AnalysisWorker {
                 log.info("Job {} completed", job.getId());
 
             } catch (Exception e) {
-                job.fail(e.getMessage());
+                job.fail("CRAWL_FAILED", e.getMessage());
                 log.error("Job {} failed", job.getId(), e);
             }
         }

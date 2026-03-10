@@ -75,19 +75,24 @@ public class AnalysisJob {
                 .createdAt(LocalDateTime.now())
                 .build();
     }
-
     public void startCrawling() {
         this.status = AnalysisJobStatus.CRAWLING;
         this.startedAt = LocalDateTime.now();
+        this.finishedAt = null;
+        this.errorCode = null;
+        this.errorMessage = null;
     }
 
     public void complete() {
         this.status = AnalysisJobStatus.COMPLETED;
         this.finishedAt = LocalDateTime.now();
+        this.errorCode = null;
+        this.errorMessage = null;
     }
 
-    public void fail(String errorMessage) {
+    public void fail(String errorCode, String errorMessage) {
         this.status = AnalysisJobStatus.FAILED;
+        this.errorCode = errorCode;
         this.errorMessage = errorMessage;
         this.finishedAt = LocalDateTime.now();
     }
