@@ -1,8 +1,12 @@
+import type { SettlementFileType } from "./settlementAnalysis";
+
+export type UploadedFileStatus = "UPLOADING" | "CONNECTED" | "FAILED";
+
 export type UploadedFileItem = {
   id: string;
   fileName: string;
-  fileType: "DAILY_SETTLEMENT" | "ORDER_SETTLEMENT" | "FEE_DETAIL";
+  fileType: SettlementFileType;
   size: number;
   uploadedAt: string;
-  status: "UPLOADING" | "CONNECTED" | "FAILED";
+  status: UploadedFileStatus;
 };

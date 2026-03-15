@@ -8,6 +8,7 @@ import com.sellivu.backend.settlement.repository.SettlementUploadRepository;
 import jakarta.transaction.Transactional;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -51,12 +52,38 @@ public class SettlementUploadService {
                     );
                 });
 
+        SettlementUpload upload = saveAndParseNewUpload(file, parsedFile);
+
+        return SettlementUploadResponse.from(upload, "정산 파일 업로드 및 파싱이 완료되었습니다.");
+    }
+
+    @Transactional
+    public SettlementUpload getOrCreateUpload(MultipartFile file) {
+        validateFile(file);
+
+        SettlementParseFacade.ParsedSettlementFile parsedFile =
+                settlementParseFacade.parse(file);
+
+        String fileHash = parsedFile.fileHash();
+
+        Optional<SettlementUpload> existing = settlementUploadRepository.findByFileHash(fileHash);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
+        return saveAndParseNewUpload(file, parsedFile);
+    }
+
+    private SettlementUpload saveAndParseNewUpload(
+            MultipartFile file,
+            SettlementParseFacade.ParsedSettlementFile parsedFile
+    ) {
         String storedFileName = settlementUploadStorage.store(file);
 
         SettlementUpload upload = SettlementUpload.uploaded(
                 Objects.requireNonNullElse(file.getOriginalFilename(), "unknown"),
                 storedFileName,
-                fileHash,
+                parsedFile.fileHash(),
                 parsedFile.parseResult().getFileType()
         );
 
@@ -82,7 +109,7 @@ public class SettlementUploadService {
             throw e;
         }
 
-        return SettlementUploadResponse.from(upload, "정산 파일 업로드 및 파싱이 완료되었습니다.");
+        return upload;
     }
 
     private void validateFile(MultipartFile file) {

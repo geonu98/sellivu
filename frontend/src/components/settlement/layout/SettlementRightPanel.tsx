@@ -8,7 +8,6 @@ import type {
   SnapshotRow,
 } from "../../../types/settlementAnalysis";
 import type { TabKey } from "../../../utils/settlementTab";
-import AnalysisProgressPanel from "../capability/AnalysisProgressPanel";
 import CapabilitySummaryCard from "../capability/CapabilitySummaryCard";
 import ResultSummaryCards from "../capability/ResultSummaryCards";
 import SettlementResultTabs from "../tabs/SettlementResultTabs";
@@ -30,8 +29,6 @@ type Props = {
   monthlyRows: MonthlyRow[];
   orderRows: OrderRow[];
   feeRows: FeeRow[];
-  showProgress: boolean;
-  progressStep: number;
 };
 
 export default function SettlementRightPanel({
@@ -45,12 +42,9 @@ export default function SettlementRightPanel({
   monthlyRows,
   orderRows,
   feeRows,
-  showProgress,
-  progressStep,
 }: Props) {
   return (
     <div className="space-y-4">
-      <AnalysisProgressPanel visible={showProgress} step={progressStep} />
       <CapabilitySummaryCard capability={capability} />
       <ResultSummaryCards issues={issues} snapshots={snapshots} />
       <SettlementResultTabs

@@ -132,4 +132,23 @@ public class SettlementWorkspaceService {
         new SecureRandom().nextBytes(bytes);
         return "ws_" + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
+
+
+    @Transactional
+    public void removeWorkspaceFile(String workspaceKey, String workspaceToken, Long workspaceFileId) {
+        SettlementWorkspace workspace = validateAccessibleWorkspace(workspaceKey, workspaceToken);
+
+        if (workspace.getStatus() != WorkspaceStatus.ACTIVE) {
+            throw new ApiException(ErrorCode.WORKSPACE_NOT_ACTIVE, "활성 상태의 워크스페이스만 수정할 수 있습니다.");
+        }
+
+        SettlementWorkspaceFile workspaceFile = workspaceFileRepository
+                .findByIdAndWorkspaceIdAndActiveTrue(workspaceFileId, workspace.getId())
+                .orElseThrow(() -> new ApiException(
+                        ErrorCode.WORKSPACE_FILE_NOT_FOUND,
+                        "현재 워크스페이스에서 활성 상태인 파일을 찾을 수 없습니다."
+                ));
+
+        workspaceFile.deactivate();
+    }
 }
