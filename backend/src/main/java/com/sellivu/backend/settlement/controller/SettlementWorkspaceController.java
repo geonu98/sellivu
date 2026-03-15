@@ -4,6 +4,7 @@ import com.sellivu.backend.settlement.dto.*;
 import com.sellivu.backend.settlement.service.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -88,5 +89,15 @@ public class SettlementWorkspaceController {
             @RequestBody WorkspaceSaveRequest request
     ) {
         return settlementWorkspaceSaveService.save(workspaceKey, workspaceToken, null, request);
+    }
+
+    @DeleteMapping("/{workspaceKey}/files/{workspaceFileId}")
+    public ResponseEntity<Void> removeWorkspaceFile(
+            @PathVariable String workspaceKey,
+            @PathVariable Long workspaceFileId,
+            @RequestHeader("X-Workspace-Token") String workspaceToken
+    ) {
+        settlementWorkspaceService.removeWorkspaceFile(workspaceKey, workspaceToken, workspaceFileId);
+        return ResponseEntity.noContent().build();
     }
 }

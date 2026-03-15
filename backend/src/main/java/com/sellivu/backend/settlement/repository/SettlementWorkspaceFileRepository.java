@@ -18,5 +18,20 @@ public interface SettlementWorkspaceFileRepository extends JpaRepository<Settlem
             SettlementFileType fileType
     );
 
+    Optional<SettlementWorkspaceFile> findByIdAndWorkspaceIdAndActiveTrue(
+            Long id,
+            Long workspaceId
+    );
+
+    Optional<SettlementWorkspaceFile> findByWorkspaceIdAndUploadId(
+            Long workspaceId,
+            Long uploadId
+    );
+
     boolean existsByWorkspaceIdAndUploadId(Long workspaceId, Long uploadId);
+
+    List<SettlementWorkspaceFile> findAllByWorkspaceIdAndFileTypeAndActiveTrueOrderByIdAsc(
+            Long workspaceId,
+            SettlementFileType fileType
+    );
 }

@@ -1,5 +1,7 @@
-package com.sellivu.backend.global.security;
+package com.sellivu.backend.global.config;
 
+import com.sellivu.backend.global.security.CustomAuthenticationEntryPoint;
+import com.sellivu.backend.global.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -42,6 +44,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/favicon.ico").permitAll()
+                        .requestMatchers("/api/settlement/workspaces/**").permitAll()
                         .requestMatchers("/api/settlement/workspaces/**").permitAll()
                         .anyRequest().authenticated()
                 )

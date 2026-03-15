@@ -31,6 +31,7 @@ public enum ErrorCode {
             HttpStatus.BAD_REQUEST,
             "WORKSPACE_ANALYSIS_SET_NOT_READY",
             "워크스페이스 분석 결과가 아직 준비되지 않았습니다."),
+    WORKSPACE_FILE_NOT_FOUND(HttpStatus.NOT_FOUND, "WORKSPACE_FILE_NOT_FOUND", "워크스페이스 파일을 찾을 수 없습니다."),
     WORKSPACE_CONTEXT_NOT_FOUND(HttpStatus.NOT_FOUND, "WORKSPACE_CONTEXT_404", "워크스페이스 컨텍스트를 찾을 수 없습니다.");
 
     private final HttpStatus status;

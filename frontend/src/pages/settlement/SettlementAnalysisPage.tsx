@@ -1,28 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  createAnalysisSet,
-  fetchAnalysisCapability,
-  fetchAnalysisContext,
-  fetchAnalysisSetItems,
-  fetchAnalysisSets,
-  fetchDailyRows,
-  fetchFeeRows,
-  fetchIssues,
-  fetchMonthlyRows,
-  fetchOrderRows,
-  fetchSnapshots,
-  linkUploadToAnalysisSet,
-  rebuildAnalysisSet,
-  updateAnalysisContext,
-} from "../../api/settlementAnalysisApi";
-import { uploadSettlementFile } from "../../api/settlementUploadApi";
+  createWorkspace,
+  fetchWorkspace,
+  fetchWorkspaceDailyRows,
+  fetchWorkspaceFeeRows,
+  fetchWorkspaceIssues,
+  fetchWorkspaceMonthlyRows,
+  fetchWorkspaceOrderRows,
+  fetchWorkspaceSnapshots,
+  removeWorkspaceFile,
+  saveWorkspace,
+  updateWorkspaceContext,
+  uploadWorkspaceFile,
+} from "../../api/settlementWorkspaceApi";
 import SettlementLeftPanel from "../../components/settlement/layout/SettlementLeftPanel";
 import SettlementRightPanel from "../../components/settlement/layout/SettlementRightPanel";
 import type {
   AnalysisCapabilityResponse,
   AnalysisContextResponse,
-  AnalysisSetItemResponse,
-  AnalysisSetResponse,
   DailyRow,
   FeeRow,
   IssueRow,
@@ -31,21 +26,42 @@ import type {
   SettlementFileType,
   SnapshotRow,
   UpdateAnalysisContextRequest,
+  WorkspaceResponse,
+  WorkspaceSession,
 } from "../../types/settlementAnalysis";
-import type { UploadedFileItem } from "../../types/settlementUi";
 import { buildTabs, type TabKey } from "../../utils/settlementTab";
 import { getApiErrorMessage } from "../../utils/apiError";
 import { useAuthStore } from "../../store/authStore";
+
+const WORKSPACE_SESSION_KEY = "sellivu-workspace-session";
+
+function loadWorkspaceSession(): WorkspaceSession | null {
+  const raw = sessionStorage.getItem(WORKSPACE_SESSION_KEY);
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as WorkspaceSession;
+  } catch {
+    return null;
+  }
+}
+
+function saveWorkspaceSession(session: WorkspaceSession) {
+  sessionStorage.setItem(WORKSPACE_SESSION_KEY, JSON.stringify(session));
+}
+
+function clearWorkspaceSession() {
+  sessionStorage.removeItem(WORKSPACE_SESSION_KEY);
+}
 
 export default function SettlementAnalysisPage() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const openAuthModal = useAuthStore((state) => state.openAuthModal);
   const user = useAuthStore((state) => state.user);
 
-  const [analysisSets, setAnalysisSets] = useState<AnalysisSetResponse[]>([]);
-  const [selectedAnalysisSetId, setSelectedAnalysisSetId] = useState<number | null>(null);
+  const [workspaceSession, setWorkspaceSession] = useState<WorkspaceSession | null>(null);
+  const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null);
 
-  const [items, setItems] = useState<AnalysisSetItemResponse[]>([]);
   const [capability, setCapability] = useState<AnalysisCapabilityResponse | null>(null);
   const [context, setContext] = useState<AnalysisContextResponse | null>(null);
 
@@ -55,34 +71,16 @@ export default function SettlementAnalysisPage() {
   const [monthlyRows, setMonthlyRows] = useState<MonthlyRow[]>([]);
   const [orderRows, setOrderRows] = useState<OrderRow[]>([]);
   const [feeRows, setFeeRows] = useState<FeeRow[]>([]);
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFileItem[]>([]);
 
   const [activeTab, setActiveTab] = useState<TabKey>("OVERVIEW");
 
   const [pageLoading, setPageLoading] = useState(false);
   const [contextSaving, setContextSaving] = useState(false);
-  const [rebuildLoading, setRebuildLoading] = useState(false);
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [removingFile, setRemovingFile] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [showProgress, setShowProgress] = useState(false);
-  const [progressStep, setProgressStep] = useState(0);
-
-  async function animateProgress() {
-    setShowProgress(true);
-    setProgressStep(0);
-
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    setProgressStep(1);
-
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    setProgressStep(2);
-
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    setProgressStep(3);
-  }
-
   function resetAnalysisDetailState() {
-    setItems([]);
     setCapability(null);
     setContext(null);
     setIssues([]);
@@ -91,50 +89,35 @@ export default function SettlementAnalysisPage() {
     setMonthlyRows([]);
     setOrderRows([]);
     setFeeRows([]);
-    setUploadedFiles([]);
     setActiveTab("OVERVIEW");
   }
 
-  async function loadAnalysisSets() {
-    const data = await fetchAnalysisSets();
-    setAnalysisSets(Array.isArray(data) ? data : []);
-  }
-
-  async function loadBaseData(analysisSetId: number) {
-    const [itemsRes, capabilityRes, contextRes] = await Promise.all([
-      fetchAnalysisSetItems(analysisSetId),
-      fetchAnalysisCapability(analysisSetId),
-      fetchAnalysisContext(analysisSetId),
-    ]);
-
-    setItems(itemsRes);
-    setCapability(capabilityRes);
-    setContext(contextRes);
-
-    return capabilityRes;
-  }
-
-  async function loadResultData(
-    analysisSetId: number,
+  async function loadWorkspaceResultData(
+    workspaceKey: string,
+    workspaceToken: string,
     capabilityRes?: AnalysisCapabilityResponse
   ) {
     const availableViews = capabilityRes?.availableViews ?? capability?.availableViews ?? [];
 
     const [issuesRes, snapshotsRes, dailyRes, monthlyRes, ordersRes, feesRes] =
       await Promise.all([
-        availableViews.includes("ISSUES") ? fetchIssues(analysisSetId) : Promise.resolve([]),
-        availableViews.includes("ORDER_FEE_CROSS_CHECK")
-          ? fetchSnapshots(analysisSetId)
+        availableViews.includes("ISSUES")
+          ? fetchWorkspaceIssues(workspaceKey, workspaceToken)
           : Promise.resolve([]),
-        availableViews.includes("DAILY") ? fetchDailyRows(analysisSetId) : Promise.resolve([]),
+        availableViews.includes("ORDER_FEE_CROSS_CHECK")
+          ? fetchWorkspaceSnapshots(workspaceKey, workspaceToken)
+          : Promise.resolve([]),
+        availableViews.includes("DAILY")
+          ? fetchWorkspaceDailyRows(workspaceKey, workspaceToken)
+          : Promise.resolve([]),
         availableViews.includes("MONTHLY")
-          ? fetchMonthlyRows(analysisSetId)
+          ? fetchWorkspaceMonthlyRows(workspaceKey, workspaceToken)
           : Promise.resolve([]),
         availableViews.includes("ORDER_DETAIL")
-          ? fetchOrderRows(analysisSetId)
+          ? fetchWorkspaceOrderRows(workspaceKey, workspaceToken)
           : Promise.resolve([]),
         availableViews.includes("FEE_DETAIL")
-          ? fetchFeeRows(analysisSetId)
+          ? fetchWorkspaceFeeRows(workspaceKey, workspaceToken)
           : Promise.resolve([]),
       ]);
 
@@ -146,67 +129,148 @@ export default function SettlementAnalysisPage() {
     setFeeRows(feesRes as FeeRow[]);
   }
 
-  async function handleCreateAnalysisSet(name: string) {
-    if (!isAuthenticated) {
-      openAuthModal();
-      return;
-    }
+  async function initializeWorkspace() {
+    setPageLoading(true);
+    setErrorMessage(null);
 
     try {
-      setErrorMessage(null);
+      const savedSession = loadWorkspaceSession();
 
-      const created = await createAnalysisSet({ name });
-      await loadAnalysisSets();
-      setSelectedAnalysisSetId(created.id);
+      if (savedSession) {
+        const workspaceRes = await fetchWorkspace(
+          savedSession.workspaceKey,
+          savedSession.workspaceToken
+        );
+
+        const nextSession: WorkspaceSession = {
+          ...savedSession,
+          savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
+        };
+
+        setWorkspaceSession(nextSession);
+        saveWorkspaceSession(nextSession);
+        setWorkspace(workspaceRes);
+        setContext(workspaceRes.context ?? null);
+        setCapability(workspaceRes.capability ?? null);
+
+        await loadWorkspaceResultData(
+          savedSession.workspaceKey,
+          savedSession.workspaceToken,
+          workspaceRes.capability
+        );
+        return;
+      }
+
+      const created = await createWorkspace();
+
+      if (!created.workspaceToken) {
+        throw new Error("workspaceToken 이 응답에 없습니다.");
+      }
+
+      const session: WorkspaceSession = {
+        workspaceKey: created.workspaceKey,
+        workspaceToken: created.workspaceToken,
+        savedAnalysisSetId: null,
+      };
+
+      saveWorkspaceSession(session);
+      setWorkspaceSession(session);
+
+      const workspaceRes = await fetchWorkspace(
+        session.workspaceKey,
+        session.workspaceToken
+      );
+
+      const nextSession: WorkspaceSession = {
+        ...session,
+        savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
+      };
+
+      setWorkspaceSession(nextSession);
+      saveWorkspaceSession(nextSession);
+      setWorkspace(workspaceRes);
+      setContext(workspaceRes.context ?? null);
+      setCapability(workspaceRes.capability ?? null);
+
+      await loadWorkspaceResultData(
+        nextSession.workspaceKey,
+        nextSession.workspaceToken,
+        workspaceRes.capability
+      );
+    } catch (error) {
+      clearWorkspaceSession();
+      setWorkspaceSession(null);
+      setWorkspace(null);
+      resetAnalysisDetailState();
+      setErrorMessage(getApiErrorMessage(error));
+    } finally {
+      setPageLoading(false);
+    }
+  }
+
+  async function refreshWorkspace() {
+    if (!workspaceSession) return;
+
+    const workspaceRes = await fetchWorkspace(
+      workspaceSession.workspaceKey,
+      workspaceSession.workspaceToken
+    );
+
+    setWorkspace(workspaceRes);
+    setContext(workspaceRes.context ?? null);
+    setCapability(workspaceRes.capability ?? null);
+
+    const nextSession: WorkspaceSession = {
+      ...workspaceSession,
+      savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
+    };
+
+    setWorkspaceSession(nextSession);
+    saveWorkspaceSession(nextSession);
+
+    await loadWorkspaceResultData(
+      workspaceSession.workspaceKey,
+      workspaceSession.workspaceToken,
+      workspaceRes.capability
+    );
+  }
+
+  async function handleUploadFile(file: File, fileType: SettlementFileType) {
+    if (!workspaceSession) return;
+
+    setErrorMessage(null);
+
+    try {
+      await uploadWorkspaceFile(
+        workspaceSession.workspaceKey,
+        workspaceSession.workspaceToken,
+        file,
+        fileType
+      );
+
+      await refreshWorkspace();
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error));
     }
   }
 
-  async function handleUploadFile(file: File, fileType: SettlementFileType) {
-    if (!isAuthenticated) {
-      openAuthModal();
-      return;
-    }
+  async function handleRemoveFile(workspaceFileId: number) {
+    if (!workspaceSession) return;
 
-    if (!selectedAnalysisSetId) return;
-
-    const tempId = `${Date.now()}-${Math.random()}`;
-
-    setUploadedFiles((prev) => [
-      {
-        id: tempId,
-        fileName: file.name,
-        fileType,
-        size: file.size,
-        uploadedAt: new Date().toLocaleString("ko-KR"),
-        status: "UPLOADING",
-      },
-      ...prev,
-    ]);
-
+    setRemovingFile(true);
     setErrorMessage(null);
 
     try {
-      const uploaded = await uploadSettlementFile(file, fileType);
-      await linkUploadToAnalysisSet(selectedAnalysisSetId, uploaded.uploadId);
-
-      setUploadedFiles((prev) =>
-        prev.map((item) =>
-          item.id === tempId ? { ...item, status: "CONNECTED" } : item
-        )
+      await removeWorkspaceFile(
+        workspaceSession.workspaceKey,
+        workspaceSession.workspaceToken,
+        workspaceFileId
       );
-
-      const capabilityRes = await loadBaseData(selectedAnalysisSetId);
-      await loadResultData(selectedAnalysisSetId, capabilityRes);
+      await refreshWorkspace();
     } catch (error) {
-      setUploadedFiles((prev) =>
-        prev.map((item) =>
-          item.id === tempId ? { ...item, status: "FAILED" } : item
-        )
-      );
-
       setErrorMessage(getApiErrorMessage(error));
+    } finally {
+      setRemovingFile(false);
     }
   }
 
@@ -221,28 +285,33 @@ export default function SettlementAnalysisPage() {
   }
 
   async function handleSaveContext() {
-    if (!isAuthenticated) {
-      openAuthModal();
-      return;
-    }
-
-    if (!selectedAnalysisSetId || !context) return;
+    if (!workspaceSession || !context) return;
 
     setContextSaving(true);
     setErrorMessage(null);
 
     try {
-      const updated = await updateAnalysisContext(selectedAnalysisSetId, {
-        storeCouponUsage: context.storeCouponUsage,
-        naverCouponUsage: context.naverCouponUsage,
-        pointBenefitUsage: context.pointBenefitUsage,
-        safeReturnCareUsage: context.safeReturnCareUsage,
-        bizWalletOffsetUsage: context.bizWalletOffsetUsage,
-        fastSettlementUsage: context.fastSettlementUsage,
-        claimIncluded: context.claimIncluded,
-      });
+      const updated = await updateWorkspaceContext(
+        workspaceSession.workspaceKey,
+        workspaceSession.workspaceToken,
+        {
+          storeCouponUsage: context.storeCouponUsage,
+          naverCouponUsage: context.naverCouponUsage,
+          pointBenefitUsage: context.pointBenefitUsage,
+          safeReturnCareUsage: context.safeReturnCareUsage,
+          bizWalletOffsetUsage: context.bizWalletOffsetUsage,
+          fastSettlementUsage: context.fastSettlementUsage,
+          claimIncluded: context.claimIncluded,
+        }
+      );
 
       setContext(updated);
+
+      await loadWorkspaceResultData(
+        workspaceSession.workspaceKey,
+        workspaceSession.workspaceToken,
+        capability ?? undefined
+      );
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error));
     } finally {
@@ -250,82 +319,41 @@ export default function SettlementAnalysisPage() {
     }
   }
 
-  async function handleRebuild() {
+  async function handleSaveWorkspace() {
     if (!isAuthenticated) {
       openAuthModal();
       return;
     }
 
-    if (!selectedAnalysisSetId) return;
+    if (!workspaceSession) return;
 
-    setRebuildLoading(true);
+    setSaveLoading(true);
     setErrorMessage(null);
 
     try {
-      await Promise.all([
-        animateProgress(),
-        (async () => {
-          await rebuildAnalysisSet(selectedAnalysisSetId);
-          const capabilityRes = await loadBaseData(selectedAnalysisSetId);
-          await loadResultData(selectedAnalysisSetId, capabilityRes);
-        })(),
-      ]);
+      await saveWorkspace(
+        workspaceSession.workspaceKey,
+        workspaceSession.workspaceToken
+      );
+      await refreshWorkspace();
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error));
     } finally {
-      setTimeout(() => {
-        setShowProgress(false);
-      }, 500);
-      setRebuildLoading(false);
+      setSaveLoading(false);
     }
   }
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setAnalysisSets([]);
-      setSelectedAnalysisSetId(null);
-      resetAnalysisDetailState();
-      setErrorMessage(null);
-      return;
-    }
-
-    (async () => {
-      setPageLoading(true);
-      setErrorMessage(null);
-
-      try {
-        await loadAnalysisSets();
-      } catch (error) {
-        setErrorMessage(getApiErrorMessage(error));
-      } finally {
-        setPageLoading(false);
-      }
-    })();
-  }, [isAuthenticated]);
-
-  useEffect(() => {
-    if (selectedAnalysisSetId !== null) return;
+  async function handleResetWorkspace() {
+    clearWorkspaceSession();
+    setWorkspaceSession(null);
+    setWorkspace(null);
     resetAnalysisDetailState();
-  }, [selectedAnalysisSetId]);
+    await initializeWorkspace();
+  }
 
   useEffect(() => {
-    if (!isAuthenticated) return;
-    if (!selectedAnalysisSetId) return;
-
-    (async () => {
-      setPageLoading(true);
-      setErrorMessage(null);
-
-      try {
-        const capabilityRes = await loadBaseData(selectedAnalysisSetId);
-        await loadResultData(selectedAnalysisSetId, capabilityRes);
-      } catch (error) {
-        setErrorMessage(getApiErrorMessage(error));
-      } finally {
-        setPageLoading(false);
-      }
-    })();
-  }, [isAuthenticated, selectedAnalysisSetId]);
+    initializeWorkspace();
+  }, []);
 
   const tabs = useMemo(
     () => buildTabs(capability?.availableViews ?? []),
@@ -343,13 +371,13 @@ export default function SettlementAnalysisPage() {
       <div>
         <h1 className="text-2xl font-bold">정산 분석</h1>
         <p className="mt-1 text-sm text-slate-500">
-          analysis set 기준으로 파일을 연결하고, context 옵션을 반영해 정산 결과를 분석합니다.
+          workspace 기준으로 파일을 업로드하고, context 옵션을 반영해 정산 결과를 분석합니다.
         </p>
       </div>
 
       {!isAuthenticated && (
         <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700">
-          현재 게스트 모드입니다. 로그인하면 분석 세트 저장, 이전 작업 조회, 결과 재분석 기능을 사용할 수 있습니다.
+          현재 게스트 모드입니다. 지금 바로 업로드/분석은 가능하고, 로그인하면 저장 후 이전 작업 조회까지 가능합니다.
           <button
             className="ml-3 rounded-lg bg-black px-3 py-2 text-xs font-medium text-white"
             onClick={openAuthModal}
@@ -362,6 +390,35 @@ export default function SettlementAnalysisPage() {
       {isAuthenticated && user && (
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
           <span className="font-medium">{user.name}</span>님으로 로그인되어 있습니다.
+        </div>
+      )}
+
+      {workspace && (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+          <div className="flex flex-wrap items-center gap-3">
+            <span>
+              상태: <span className="font-medium">{workspace.status}</span>
+            </span>
+            <span>
+              만료일:{" "}
+              <span className="font-medium">
+                {new Date(workspace.expiresAt).toLocaleString("ko-KR")}
+              </span>
+            </span>
+            {workspace.savedAnalysisSetId && (
+              <span>
+                저장된 분석 ID:{" "}
+                <span className="font-medium">{workspace.savedAnalysisSetId}</span>
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleResetWorkspace}
+              className="rounded-lg border px-3 py-2 text-xs"
+            >
+              새 워크스페이스 시작
+            </button>
+          </div>
         </div>
       )}
 
@@ -380,31 +437,26 @@ export default function SettlementAnalysisPage() {
       <div className="grid grid-cols-12 gap-6">
         <aside className="col-span-4">
           <SettlementLeftPanel
-            analysisSets={analysisSets}
-            selectedAnalysisSetId={selectedAnalysisSetId}
-            items={items}
             context={context}
             capability={capability}
-            uploadedFiles={uploadedFiles}
+            workspaceFiles={(workspace?.files ?? []).filter((file) => file.active)}
             contextSaving={contextSaving}
-            rebuildLoading={rebuildLoading}
-            onCreateAnalysisSet={handleCreateAnalysisSet}
-            onSelectAnalysisSet={setSelectedAnalysisSetId}
+            saveLoading={saveLoading}
+            removingFile={removingFile}
+            isAuthenticated={isAuthenticated}
+            workspaceStatus={workspace?.status ?? null}
             onUploadFile={handleUploadFile}
+            onRemoveFile={handleRemoveFile}
             onChangeContext={handleChangeContext}
             onSaveContext={handleSaveContext}
-            onRebuild={handleRebuild}
+            onSaveWorkspace={handleSaveWorkspace}
           />
         </aside>
 
         <main className="col-span-8">
-          {!isAuthenticated ? (
+          {!workspaceSession ? (
             <div className="rounded-2xl border bg-white p-8 text-sm text-slate-500">
-              현재 화면은 analysis set 저장형 구조라서, 로그인 후 분석 세트를 생성하면 업로드/연결/재분석 결과를 사용할 수 있습니다.
-            </div>
-          ) : !selectedAnalysisSetId ? (
-            <div className="rounded-2xl border bg-white p-8 text-sm text-slate-500">
-              분석 세트를 선택하거나 새로 생성하세요.
+              워크스페이스를 준비하는 중입니다.
             </div>
           ) : (
             <SettlementRightPanel
@@ -418,8 +470,6 @@ export default function SettlementAnalysisPage() {
               monthlyRows={monthlyRows}
               orderRows={orderRows}
               feeRows={feeRows}
-              showProgress={showProgress}
-              progressStep={progressStep}
             />
           )}
         </main>

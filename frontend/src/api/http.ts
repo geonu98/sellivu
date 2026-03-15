@@ -39,7 +39,7 @@ async function requestRefresh(): Promise<string | null> {
         store.setAuthenticated(true);
 
         return newAccessToken;
-      } catch (error) {
+      } catch {
         useAuthStore.getState().clearAuth();
         return null;
       } finally {
@@ -79,6 +79,13 @@ http.interceptors.response.use(
     }
 
     if (isAuthFreeRequest(originalRequest.url)) {
+      return Promise.reject(error);
+    }
+
+    const { accessToken, isAuthenticated } = useAuthStore.getState();
+
+    // 게스트 요청이면 refresh 시도하지 않음
+    if (!accessToken || !isAuthenticated) {
       return Promise.reject(error);
     }
 

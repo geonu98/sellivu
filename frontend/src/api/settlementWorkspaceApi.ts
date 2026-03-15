@@ -175,3 +175,16 @@ export async function saveWorkspace(
   );
   return data;
 }
+
+
+export async function removeWorkspaceFile(
+  workspaceKey: string,
+  workspaceToken: string,
+  workspaceFileId: number
+) {
+  const { data } = await http.delete(
+    `/api/settlement/workspaces/${workspaceKey}/files/${workspaceFileId}`,
+    workspaceHeaders(workspaceToken)
+  );
+  return data;
+}

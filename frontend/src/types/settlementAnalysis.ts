@@ -1,169 +1,211 @@
+export type AnalysisOptionValue = "YES" | "NO" | "UNKNOWN";
+
 export type SettlementFileType =
   | "DAILY_SETTLEMENT"
   | "ORDER_SETTLEMENT"
   | "FEE_DETAIL";
 
-export type YesNoUnknown = "YES" | "NO" | "UNKNOWN";
-
-export type AvailableView =
-  | "OVERVIEW"
-  | "ISSUES"
-  | "SNAPSHOTS"
-  | "DAILY"
-  | "MONTHLY"
-  | "ORDER_DETAIL"
-  | "FEE_DETAIL"
-  | "ORDER_FEE_CROSS_CHECK";
-
-export interface AnalysisSetResponse {
+export type AnalysisSetResponse = {
   id: number;
   name: string;
   createdAt: string;
-  updatedAt?: string;
-}
+};
 
-export interface CreateAnalysisSetRequest {
+export type CreateAnalysisSetRequest = {
   name: string;
-}
+};
 
-export interface AnalysisSetItemResponse {
+export type AnalysisSetItemResponse = {
   id: number;
-  analysisSetId: number;
   uploadId: number;
   fileType: SettlementFileType;
-  createdAt: string;
-}
+  originalFileName: string;
+  linkedAt: string;
+};
 
-export interface AnalysisCapabilityResponse {
-  analysisSetId: number;
+export type AnalysisCapabilityResponse = {
   uploadedFileTypes: SettlementFileType[];
-  availableViews: AvailableView[];
+  availableViews: string[];
   missingFileTypes: SettlementFileType[];
   gaps: string[];
   requiresContextOptions: boolean;
-  explainablePolicyFactors: string[];
-  verificationPendingFields: string[];
-  message: string;
-}
+};
 
-export interface AnalysisContextResponse {
-  analysisSetId: number;
-  storeCouponUsage: YesNoUnknown;
-  naverCouponUsage: YesNoUnknown;
-  pointBenefitUsage: YesNoUnknown;
-  safeReturnCareUsage: YesNoUnknown;
-  bizWalletOffsetUsage: YesNoUnknown;
-  fastSettlementUsage: YesNoUnknown;
-  claimIncluded: YesNoUnknown;
+export type AnalysisContextResponse = {
+  analysisSetId?: number | null;
+  workspaceId?: number | null;
+  storeCouponUsage: AnalysisOptionValue;
+  naverCouponUsage: AnalysisOptionValue;
+  pointBenefitUsage: AnalysisOptionValue;
+  safeReturnCareUsage: AnalysisOptionValue;
+  bizWalletOffsetUsage: AnalysisOptionValue;
+  fastSettlementUsage: AnalysisOptionValue;
+  claimIncluded: AnalysisOptionValue;
   updatedAt: string;
-}
+};
 
-export interface UpdateAnalysisContextRequest {
-  storeCouponUsage: YesNoUnknown;
-  naverCouponUsage: YesNoUnknown;
-  pointBenefitUsage: YesNoUnknown;
-  safeReturnCareUsage: YesNoUnknown;
-  bizWalletOffsetUsage: YesNoUnknown;
-  fastSettlementUsage: YesNoUnknown;
-  claimIncluded: YesNoUnknown;
-}
+export type UpdateAnalysisContextRequest = {
+  storeCouponUsage: AnalysisOptionValue;
+  naverCouponUsage: AnalysisOptionValue;
+  pointBenefitUsage: AnalysisOptionValue;
+  safeReturnCareUsage: AnalysisOptionValue;
+  bizWalletOffsetUsage: AnalysisOptionValue;
+  fastSettlementUsage: AnalysisOptionValue;
+  claimIncluded: AnalysisOptionValue;
+};
 
-export interface RebuildAnalysisResponse {
+export type SettlementUploadResponse = {
+  uploadId: number;
+  fileName: string;
+  fileType: SettlementFileType;
+  uploadedAt: string;
+};
+
+export type RebuildAnalysisResponse = {
   message: string;
-  analysisSetId: number;
-  rebuiltUploadCount: number;
-  deletedSnapshotCount: number;
-}
+  analysisSetId?: number;
+  rebuiltUploadCount?: number;
+  deletedSnapshotCount?: number;
+};
 
-export type MatchStatus =
-  | "MATCHED"
-  | "ORDER_ONLY"
-  | "FEE_ONLY"
-  | "MISMATCHED";
-
-export type ReviewStatus = "OK" | "REVIEW" | "ISSUE";
-
-export interface SnapshotRow {
-  snapshotId: number;
-  joinKey: string;
-  orderNo: string | null;
-  productOrderNo: string | null;
-  productName: string | null;
-  settlementDate: string | null;
-  matchStatus: MatchStatus;
-  resolvedSettlementAmount: number | null;
-  resolvedCommissionAmount: number | null;
-  resolvedNetAmount: number | null;
-  issueCount: number;
-  reviewStatus: ReviewStatus;
-}
-
-export type IssueSourceType = "SNAPSHOT" | "DAILY_CROSS_CHECK";
-export type Severity = "ERROR" | "WARN" | "INFO";
-export type JudgementStatus = "CONFIRMED" | "EXPLAINABLE" | "PENDING";
-
-export interface IssueRow {
-  id: number;
-  sourceType: IssueSourceType;
+export type IssueRow = {
+  id: number | null;
+  sourceType: string;
+  snapshotId: number | null;
   issueType: string;
   orderNo: string | null;
   productOrderNo: string | null;
   joinKey: string | null;
   message: string;
-  severity: Severity;
-  judgementStatus: JudgementStatus;
+  resolved: boolean;
+  severity: string | null;
+  judgementStatus: string | null;
   explanationCode: string | null;
   needsUserInput: boolean;
   possibleReasonMessage: string | null;
   issueDate: string | null;
   createdAt: string;
-}
+};
 
-export interface DailyRow {
+export type SnapshotRow = {
   id: number;
-  settlementDate: string | null;
-  settlementAmount: number | null;
-  benefitAmount: number | null;
-  deductionRefundAmount: number | null;
-  bizWalletOffsetAmount: number | null;
-  safeReturnCareAmount: number | null;
-  preferredFeeRefundAmount: number | null;
-  settlementMethod: string | null;
-}
-
-export interface MonthlyRow {
-  month: string;
-  settlementAmount: number | null;
-  benefitAmount: number | null;
-  deductionRefundAmount: number | null;
-  netAmount: number | null;
-}
-
-export interface OrderRow {
-  id: number;
+  joinKey: string;
   orderNo: string | null;
   productOrderNo: string | null;
+  matchStatus: string;
+  orderRowId: number | null;
+  feeRowId: number | null;
+  orderUploadId: number | null;
+  feeUploadId: number | null;
   productName: string | null;
+  optionName: string | null;
+  sellerProductCode: string | null;
+  sellerOptionCode: string | null;
+  paidAt: string | null;
   settlementDate: string | null;
-  settlementAmount: number | null;
-  benefitAmount: number | null;
-  netAmount: number | null;
-}
+  orderSettlementAmount: number | null;
+  orderCommissionAmount: number | null;
+  orderNetAmount: number | null;
+  feeSettlementAmount: number | null;
+  feeCommissionAmount: number | null;
+  feeNetAmount: number | null;
+  resolvedSettlementAmount: number | null;
+  resolvedCommissionAmount: number | null;
+  resolvedNetAmount: number | null;
+  settlementAmountMatched: boolean;
+  commissionAmountMatched: boolean;
+  netAmountMatched: boolean;
+  issueCount: number;
+  reviewStatus: string;
+  lastAggregatedAt: string;
+};
 
-export interface FeeRow {
+export type DailyRow = {
   id: number;
-  orderNo: string | null;
-  productOrderNo: string | null;
-  productName: string | null;
-  settlementDate: string | null;
-  feeAmount: number | null;
-  feeType: string | null;
-  netAmount: number | null;
-}
-
-export interface SettlementUploadResponse {
   uploadId: number;
-  fileName: string;
+  settlementCompletedDate: string | null;
+  settlementAmount: number | null;
+  paymentAmount: number | null;
+  productSalesAmount: number | null;
+  sellerBurdenDiscountAmount: number | null;
+  deliveryFeeAmount: number | null;
+  sellerBurdenReturnShippingFee: number | null;
+  pointUsageAmount: number | null;
+  commissionAmount: number | null;
+  claimAmount: number | null;
+  settlementMethod: string | null;
+  benefitSettlementAmount: number | null;
+  dailyDeductionRefundAmount: number | null;
+  bizWalletOffsetAmount: number | null;
+  safeReturnCareCost: number | null;
+  fastSettlementAmount: number | null;
+  preferredFeeRefundAmount: number | null;
+  createdAt: string;
+};
+
+export type MonthlyRow = {
+  month: string;
+  settlementAmount: number;
+  orderCount: number;
+};
+
+export type OrderRow = {
+  id: number;
+  uploadId: number;
+  orderNo: string | null;
+  productOrderNo: string | null;
+  productName: string | null;
+  optionName: string | null;
+  settlementDate: string | null;
+  settlementAmount: number | null;
+  commissionAmount: number | null;
+  netAmount: number | null;
+};
+
+export type FeeRow = {
+  id: number;
+  uploadId: number;
+  orderNo: string | null;
+  productOrderNo: string | null;
+  feeType: string | null;
+  settlementDate: string | null;
+  settlementAmount: number | null;
+  commissionAmount: number | null;
+  netAmount: number | null;
+};
+
+export type WorkspaceOwnerType = "GUEST" | "USER";
+export type WorkspaceStatus = "ACTIVE" | "SAVED" | "EXPIRED" | "DELETED";
+
+export type WorkspaceSession = {
+  workspaceKey: string;
+  workspaceToken: string;
+  savedAnalysisSetId: number | null;
+};
+
+export type WorkspaceFileResponse = {
+  workspaceFileId: number;
+  uploadId: number;
+  originalFileName: string;
   fileType: SettlementFileType;
-  message?: string;
-}
+  active: boolean;
+  createdAt: string;
+};
+
+export type WorkspaceResponse = {
+  workspaceKey: string;
+  ownerType: WorkspaceOwnerType;
+  status: WorkspaceStatus;
+  savedAnalysisSetId: number | null;
+  expiresAt: string;
+  files: WorkspaceFileResponse[];
+  context: AnalysisContextResponse;
+  capability: AnalysisCapabilityResponse;
+  workspaceToken?: string;
+};
+
+export type WorkspaceSaveResponse = {
+  message: string;
+  workspaceKey: string;
+  analysisSetId: number;
+};

@@ -35,7 +35,8 @@ public class CorsConfig {
                 HttpHeaders.AUTHORIZATION,
                 HttpHeaders.CONTENT_TYPE,
                 HttpHeaders.ACCEPT,
-                "X-Requested-With"
+                "X-Requested-With",
+                "X-Workspace-Token"
         ));
         configuration.setExposedHeaders(List.of(
                 HttpHeaders.AUTHORIZATION
