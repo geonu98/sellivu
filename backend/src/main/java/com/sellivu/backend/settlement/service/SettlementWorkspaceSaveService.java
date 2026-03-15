@@ -71,8 +71,9 @@ public class SettlementWorkspaceSaveService {
                 ? "기본 분석 세트"
                 : request.name().trim();
 
-        SettlementAnalysisSet savedSet =
-                analysisSetRepository.save(SettlementAnalysisSet.create(finalName));
+        SettlementAnalysisSet savedSet = SettlementAnalysisSet.create(finalName);
+        savedSet.assignUser(resolvedUserId);
+        savedSet = analysisSetRepository.save(savedSet);
 
         for (SettlementWorkspaceFile file : files) {
             analysisSetItemRepository.save(

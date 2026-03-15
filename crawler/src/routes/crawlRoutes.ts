@@ -11,7 +11,8 @@ router.post("/product", async (req, res) => {
   try {
     if (!body || !body.platform || !body.normalizedUrl) {
       return res.status(400).json({
-        message: "platform과 normalizedUrl은 필수입니다.",
+        errorCode: "INVALID_REQUEST",
+        errorMessage: "platform과 normalizedUrl은 필수입니다.",
       });
     }
 
@@ -19,8 +20,13 @@ router.post("/product", async (req, res) => {
     return res.json(result);
   } catch (error) {
     console.error("crawl error:", error);
+
+    const message =
+      error instanceof Error ? error.message : "크롤링 중 알 수 없는 오류가 발생했습니다.";
+
     return res.status(500).json({
-      message: "크롤링 중 오류가 발생했습니다.",
+      errorCode: "CRAWL_FAILED",
+      errorMessage: message,
     });
   }
 });
