@@ -1,19 +1,31 @@
 import type {
   AnalysisContextResponse,
   UpdateAnalysisContextRequest,
-  YesNoUnknown,
+  AnalysisOptionValue,
 } from "../../../types/settlementAnalysis";
 
 type Props = {
   value: AnalysisContextResponse | null;
-  saving?: boolean;
   highlight?: boolean;
   onChange: (next: UpdateAnalysisContextRequest) => void;
-  onSave: () => Promise<void>;
 };
 
+const OPTION_KEYS = [
+  "storeCouponUsage",
+  "naverCouponUsage",
+  "pointBenefitUsage",
+  "safeReturnCareUsage",
+  "bizWalletOffsetUsage",
+  "fastSettlementUsage",
+  "claimIncluded",
+] as const;
+
+type OptionKey = (typeof OPTION_KEYS)[number];
+
+const OPTION_CHOICES: AnalysisOptionValue[] = ["YES", "NO", "UNKNOWN"];
+
 const optionConfigs: {
-  key: keyof UpdateAnalysisContextRequest;
+  key: OptionKey;
   label: string;
   description: string;
 }[] = [
@@ -57,29 +69,30 @@ const optionConfigs: {
   },
 ];
 
+function normalizeContext(
+  value: AnalysisContextResponse | null
+): UpdateAnalysisContextRequest {
+  return {
+    storeCouponUsage: value?.storeCouponUsage ?? "UNKNOWN",
+    naverCouponUsage: value?.naverCouponUsage ?? "UNKNOWN",
+    pointBenefitUsage: value?.pointBenefitUsage ?? "UNKNOWN",
+    safeReturnCareUsage: value?.safeReturnCareUsage ?? "UNKNOWN",
+    bizWalletOffsetUsage: value?.bizWalletOffsetUsage ?? "UNKNOWN",
+    fastSettlementUsage: value?.fastSettlementUsage ?? "UNKNOWN",
+    claimIncluded: value?.claimIncluded ?? "UNKNOWN",
+  };
+}
+
 export default function SettlementContextForm({
   value,
-  saving = false,
   highlight = false,
   onChange,
-  onSave,
 }: Props) {
-  if (!value) return null;
+  const currentValue = normalizeContext(value);
 
-  function handleOptionChange(
-    key: keyof UpdateAnalysisContextRequest,
-    nextValue: YesNoUnknown
-  ) {
-    if (!value) return;
-
+  function handleOptionChange(key: OptionKey, nextValue: AnalysisOptionValue) {
     onChange({
-      storeCouponUsage: value.storeCouponUsage,
-      naverCouponUsage: value.naverCouponUsage,
-      pointBenefitUsage: value.pointBenefitUsage,
-      safeReturnCareUsage: value.safeReturnCareUsage,
-      bizWalletOffsetUsage: value.bizWalletOffsetUsage,
-      fastSettlementUsage: value.fastSettlementUsage,
-      claimIncluded: value.claimIncluded,
+      ...currentValue,
       [key]: nextValue,
     });
   }
@@ -87,10 +100,11 @@ export default function SettlementContextForm({
   return (
     <div
       className={`rounded-xl border bg-white p-4 ${
-        highlight ? "border-orange-300 ring-1 ring-orange-200" : ""
+        highlight ? "border-orange-300 ring-1 ring-orange-200" : "border-slate-200"
       }`}
     >
       <h3 className="mb-2 text-sm font-semibold">정책성 차이 확인 옵션</h3>
+
       <p className="mb-4 text-xs leading-5 text-slate-500">
         기본 파일 3개만으로는 확인하기 어려운 정책성 요소입니다.
         <br />
@@ -99,23 +113,26 @@ export default function SettlementContextForm({
 
       <div className="space-y-3">
         {optionConfigs.map((option) => (
-          <div key={option.key} className="rounded-lg border border-slate-200 p-3">
+          <div
+            key={option.key}
+            className="rounded-lg border border-slate-200 p-3"
+          >
             <p className="text-sm font-medium">{option.label}</p>
             <p className="mt-1 text-xs leading-5 text-slate-500">
               {option.description}
             </p>
 
             <div className="mt-3 flex flex-wrap gap-3 text-sm">
-              {(["YES", "NO", "UNKNOWN"] as YesNoUnknown[]).map((choice) => {
-                const checked = value[option.key] === choice;
+              {OPTION_CHOICES.map((choice) => {
+                const checked = currentValue[option.key] === choice;
 
                 return (
                   <label
                     key={choice}
-                    className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-2 ${
+                    className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-2 transition ${
                       checked
                         ? "border-black bg-black text-white"
-                        : "border-slate-300 bg-white text-slate-700"
+                        : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
                     }`}
                   >
                     <input
@@ -139,14 +156,6 @@ export default function SettlementContextForm({
           </div>
         ))}
       </div>
-
-      <button
-        className="mt-4 w-full rounded-lg bg-black px-4 py-3 text-sm text-white disabled:opacity-50"
-        onClick={onSave}
-        disabled={saving}
-      >
-        {saving ? "저장 중..." : "옵션 저장"}
-      </button>
     </div>
   );
 }

@@ -67,7 +67,6 @@ export type RebuildAnalysisResponse = {
   rebuiltUploadCount?: number;
   deletedSnapshotCount?: number;
 };
-
 export type IssueRow = {
   id: number | null;
   sourceType: string;
@@ -85,6 +84,15 @@ export type IssueRow = {
   possibleReasonMessage: string | null;
   issueDate: string | null;
   createdAt: string;
+
+  displayCategory: string;
+  title: string;
+  description: string;
+  impact: string;
+  actionGuide: string;
+  statusLabel: string;
+  explainable: boolean;
+  refundCandidate: boolean;
 };
 
 export type SnapshotRow = {
@@ -209,3 +217,4 @@ export type WorkspaceSaveResponse = {
   workspaceKey: string;
   analysisSetId: number;
 };
+

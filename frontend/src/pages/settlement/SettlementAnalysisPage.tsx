@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   createWorkspace,
   fetchWorkspace,
@@ -13,8 +13,17 @@ import {
   updateWorkspaceContext,
   uploadWorkspaceFile,
 } from "../../api/settlementWorkspaceApi";
-import SettlementLeftPanel from "../../components/settlement/layout/SettlementLeftPanel";
-import SettlementRightPanel from "../../components/settlement/layout/SettlementRightPanel";
+import { authApi } from "../../api/authApi";
+import SettlementUploadSection from "../../components/settlement/upload/SettlementUploadSection";
+import UploadedFileListCard from "../../components/settlement/upload/UploadedFileListCard";
+import SettlementContextForm from "../../components/settlement/context/SettlementContextForm";
+import SettlementResultTabs from "../../components/settlement/tabs/SettlementResultTabs";
+import IssuesTable from "../../components/settlement/tabs/IssuesTable";
+import SnapshotsTable from "../../components/settlement/tabs/SnapshotsTable";
+import DailyTable from "../../components/settlement/tabs/DailyTable";
+import MonthlyTable from "../../components/settlement/tabs/MonthlyTable";
+import OrdersTable from "../../components/settlement/tabs/OrdersTable";
+import FeesTable from "../../components/settlement/tabs/FeesTable";
 import type {
   AnalysisCapabilityResponse,
   AnalysisContextResponse,
@@ -54,15 +63,290 @@ function clearWorkspaceSession() {
   sessionStorage.removeItem(WORKSPACE_SESSION_KEY);
 }
 
+function createDefaultContext(): UpdateAnalysisContextRequest {
+  return {
+    storeCouponUsage: "UNKNOWN",
+    naverCouponUsage: "UNKNOWN",
+    pointBenefitUsage: "UNKNOWN",
+    safeReturnCareUsage: "UNKNOWN",
+    bizWalletOffsetUsage: "UNKNOWN",
+    fastSettlementUsage: "UNKNOWN",
+    claimIncluded: "UNKNOWN",
+  };
+}
+
+function normalizeContext(
+  value: AnalysisContextResponse | null | undefined
+): UpdateAnalysisContextRequest {
+  return {
+    storeCouponUsage: value?.storeCouponUsage ?? "UNKNOWN",
+    naverCouponUsage: value?.naverCouponUsage ?? "UNKNOWN",
+    pointBenefitUsage: value?.pointBenefitUsage ?? "UNKNOWN",
+    safeReturnCareUsage: value?.safeReturnCareUsage ?? "UNKNOWN",
+    bizWalletOffsetUsage: value?.bizWalletOffsetUsage ?? "UNKNOWN",
+    fastSettlementUsage: value?.fastSettlementUsage ?? "UNKNOWN",
+    claimIncluded: value?.claimIncluded ?? "UNKNOWN",
+  };
+}
+
+function PanelCard({
+  title,
+  children,
+  action,
+  className = "",
+  bodyClassName = "",
+}: {
+  title: string;
+  children: ReactNode;
+  action?: ReactNode;
+  className?: string;
+  bodyClassName?: string;
+}) {
+  return (
+    <section
+      className={`flex min-h-0 flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm shadow-slate-200/60 ${className}`}
+    >
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+        <h2 className="text-base font-extrabold tracking-tight text-slate-800">
+          {title}
+        </h2>
+        {action}
+      </div>
+      <div className={`min-h-0 flex-1 ${bodyClassName}`}>{children}</div>
+    </section>
+  );
+}
+
+function EmptyState({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex h-full min-h-[260px] flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-200 bg-slate-50 px-6 py-10 text-center">
+      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
+        <EmptyBoxIcon className="h-8 w-8 text-slate-400" />
+      </div>
+      <p className="text-base font-semibold text-slate-700">{title}</p>
+      <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
+    </div>
+  );
+}
+
+function KpiCard({
+  label,
+  value,
+  tone = "blue",
+  icon,
+}: {
+  label: string;
+  value: number;
+  tone?: "blue" | "emerald" | "amber" | "rose";
+  icon: ReactNode;
+}) {
+  const toneClass = {
+    blue: {
+      wrap: "bg-blue-50 text-blue-700 border-blue-100",
+      icon: "bg-blue-100 text-blue-700",
+      value: "text-blue-700",
+    },
+    emerald: {
+      wrap: "bg-emerald-50 text-emerald-700 border-emerald-100",
+      icon: "bg-emerald-100 text-emerald-700",
+      value: "text-emerald-700",
+    },
+    amber: {
+      wrap: "bg-amber-50 text-amber-700 border-amber-100",
+      icon: "bg-amber-100 text-amber-700",
+      value: "text-amber-700",
+    },
+    rose: {
+      wrap: "bg-rose-50 text-rose-700 border-rose-100",
+      icon: "bg-rose-100 text-rose-700",
+      value: "text-rose-700",
+    },
+  }[tone];
+
+  return (
+    <div className={`rounded-[22px] border p-4 shadow-sm ${toneClass.wrap}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold">{label}</p>
+          <p className={`mt-3 text-3xl font-black ${toneClass.value}`}>
+            {value}
+          </p>
+        </div>
+        <div
+          className={`flex h-11 w-11 items-center justify-center rounded-full ${toneClass.icon}`}
+        >
+          {icon}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FileTypeLabel(type: string) {
+  switch (type) {
+    case "DAILY":
+      return "일별 정산";
+    case "MONTHLY":
+      return "월별 정산";
+    case "ORDER_DETAIL":
+      return "건별 정산";
+    case "FEE_DETAIL":
+      return "수수료 상세";
+    case "ORDER_FEE_CROSS_CHECK":
+      return "교차 검증";
+    case "ISSUES":
+      return "이슈 리포트";
+    default:
+      return type;
+  }
+}
+
+function OptionValueLabel(value: string) {
+  switch (value) {
+    case "YES":
+      return "예";
+    case "NO":
+      return "아니오";
+    case "UNKNOWN":
+      return "모름";
+    default:
+      return value;
+  }
+}
+
+function OptionBadge({ value }: { value: string }) {
+  const style =
+    value === "YES"
+      ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+      : value === "NO"
+      ? "bg-rose-50 text-rose-700 border-rose-100"
+      : "bg-slate-100 text-slate-600 border-slate-200";
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-bold ${style}`}
+    >
+      {OptionValueLabel(value)}
+    </span>
+  );
+}
+
+function CapabilityBadge({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold text-slate-600 shadow-sm">
+      {label}
+    </span>
+  );
+}
+
+function IssueIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <path d="M7 3.5h7l4 4V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1Z" />
+      <path d="M14 3.5V8h4" />
+      <path d="M9 12h6M9 16h6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CheckIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path
+        d="m8.5 12 2.5 2.5 4.5-5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function SnapshotIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <path d="M4 12c2.5-5 13.5-5 16 0-2.5 5-13.5 5-16 0Z" />
+      <circle cx="12" cy="12" r="2.5" />
+    </svg>
+  );
+}
+
+function AlertIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <path d="M12 8v5" strokeLinecap="round" />
+      <circle cx="12" cy="16.5" r=".8" fill="currentColor" stroke="none" />
+      <path d="M10.3 4.8 3.8 16A2 2 0 0 0 5.5 19h13a2 2 0 0 0 1.7-3l-6.5-11.2a2 2 0 0 0-3.4 0Z" />
+    </svg>
+  );
+}
+
+function EmptyBoxIcon({ className = "h-8 w-8" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      stroke="currentColor"
+      strokeWidth="1.7"
+    >
+      <path
+        d="M4 10.5 12 6l8 4.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M4 10.5V18l8 4 8-4v-7.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M12 22v-8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export default function SettlementAnalysisPage() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const openAuthModal = useAuthStore((state) => state.openAuthModal);
   const user = useAuthStore((state) => state.user);
+  const openAuthModal = useAuthStore((state) => state.openAuthModal);
+  const clearAuth = useAuthStore((state) => state.clearAuth);
 
-  const [workspaceSession, setWorkspaceSession] = useState<WorkspaceSession | null>(null);
+  const [workspaceSession, setWorkspaceSession] =
+    useState<WorkspaceSession | null>(null);
   const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null);
 
-  const [capability, setCapability] = useState<AnalysisCapabilityResponse | null>(null);
+  const [capability, setCapability] =
+    useState<AnalysisCapabilityResponse | null>(null);
   const [context, setContext] = useState<AnalysisContextResponse | null>(null);
 
   const [issues, setIssues] = useState<IssueRow[]>([]);
@@ -73,6 +357,7 @@ export default function SettlementAnalysisPage() {
   const [feeRows, setFeeRows] = useState<FeeRow[]>([]);
 
   const [activeTab, setActiveTab] = useState<TabKey>("OVERVIEW");
+  const [isOptionEditorOpen, setIsOptionEditorOpen] = useState(false);
 
   const [pageLoading, setPageLoading] = useState(false);
   const [contextSaving, setContextSaving] = useState(false);
@@ -80,24 +365,33 @@ export default function SettlementAnalysisPage() {
   const [removingFile, setRemovingFile] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  function resetAnalysisDetailState() {
-    setCapability(null);
-    setContext(null);
-    setIssues([]);
-    setSnapshots([]);
-    setDailyRows([]);
-    setMonthlyRows([]);
-    setOrderRows([]);
-    setFeeRows([]);
-    setActiveTab("OVERVIEW");
-  }
+  const workspaceFiles = (workspace?.files ?? []).filter((file) => file.active);
+  const isActiveWorkspace = workspace?.status === "ACTIVE";
+  const hasConnectedFiles = workspaceFiles.length > 0;
+  const canSaveWorkspace = isActiveWorkspace && hasConnectedFiles && !saveLoading;
+
+  const normalizedContext = useMemo(() => normalizeContext(context), [context]);
+
+  const optionSummary = useMemo(
+    () => [
+      { label: "스토어 쿠폰", value: normalizedContext.storeCouponUsage },
+      { label: "네이버 쿠폰", value: normalizedContext.naverCouponUsage },
+      { label: "포인트 혜택", value: normalizedContext.pointBenefitUsage },
+      { label: "안전반품 케어", value: normalizedContext.safeReturnCareUsage },
+      { label: "비즈월렛 상계", value: normalizedContext.bizWalletOffsetUsage },
+      { label: "빠른정산", value: normalizedContext.fastSettlementUsage },
+      { label: "클레임 포함", value: normalizedContext.claimIncluded },
+    ],
+    [normalizedContext]
+  );
 
   async function loadWorkspaceResultData(
     workspaceKey: string,
     workspaceToken: string,
     capabilityRes?: AnalysisCapabilityResponse
   ) {
-    const availableViews = capabilityRes?.availableViews ?? capability?.availableViews ?? [];
+    const availableViews =
+      capabilityRes?.availableViews ?? capability?.availableViews ?? [];
 
     const [issuesRes, snapshotsRes, dailyRes, monthlyRes, ordersRes, feesRes] =
       await Promise.all([
@@ -201,7 +495,14 @@ export default function SettlementAnalysisPage() {
       clearWorkspaceSession();
       setWorkspaceSession(null);
       setWorkspace(null);
-      resetAnalysisDetailState();
+      setCapability(null);
+      setContext(null);
+      setIssues([]);
+      setSnapshots([]);
+      setDailyRows([]);
+      setMonthlyRows([]);
+      setOrderRows([]);
+      setFeeRows([]);
       setErrorMessage(getApiErrorMessage(error));
     } finally {
       setPageLoading(false);
@@ -247,7 +548,6 @@ export default function SettlementAnalysisPage() {
         file,
         fileType
       );
-
       await refreshWorkspace();
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error));
@@ -275,43 +575,36 @@ export default function SettlementAnalysisPage() {
   }
 
   function handleChangeContext(next: UpdateAnalysisContextRequest) {
-    setContext((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        ...next,
-      };
-    });
+    setContext((prev) => ({
+      ...(prev ?? (createDefaultContext() as AnalysisContextResponse)),
+      ...next,
+    }));
   }
 
   async function handleSaveContext() {
-    if (!workspaceSession || !context) return;
+    if (!workspaceSession) return;
 
     setContextSaving(true);
     setErrorMessage(null);
 
     try {
+      const payload = normalizedContext;
+
       const updated = await updateWorkspaceContext(
         workspaceSession.workspaceKey,
         workspaceSession.workspaceToken,
-        {
-          storeCouponUsage: context.storeCouponUsage,
-          naverCouponUsage: context.naverCouponUsage,
-          pointBenefitUsage: context.pointBenefitUsage,
-          safeReturnCareUsage: context.safeReturnCareUsage,
-          bizWalletOffsetUsage: context.bizWalletOffsetUsage,
-          fastSettlementUsage: context.fastSettlementUsage,
-          claimIncluded: context.claimIncluded,
-        }
+        payload
       );
 
-      setContext(updated);
+      setContext((updated ?? payload) as AnalysisContextResponse);
 
       await loadWorkspaceResultData(
         workspaceSession.workspaceKey,
         workspaceSession.workspaceToken,
         capability ?? undefined
       );
+
+      setIsOptionEditorOpen(false);
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error));
     } finally {
@@ -343,11 +636,28 @@ export default function SettlementAnalysisPage() {
     }
   }
 
+  async function handleLogout() {
+    try {
+      await authApi.logout();
+    } catch {
+      // ignore
+    } finally {
+      clearAuth();
+    }
+  }
+
   async function handleResetWorkspace() {
     clearWorkspaceSession();
     setWorkspaceSession(null);
     setWorkspace(null);
-    resetAnalysisDetailState();
+    setCapability(null);
+    setContext(null);
+    setIssues([]);
+    setSnapshots([]);
+    setDailyRows([]);
+    setMonthlyRows([]);
+    setOrderRows([]);
+    setFeeRows([]);
     await initializeWorkspace();
   }
 
@@ -366,114 +676,408 @@ export default function SettlementAnalysisPage() {
     }
   }, [tabs, activeTab]);
 
+  function renderResultContent() {
+    if (activeTab === "OVERVIEW" || activeTab === "ISSUES") {
+      if (!issues.length) {
+        return (
+          <EmptyState
+            title="이슈 데이터가 없습니다"
+            description="파일을 업로드하고 분석 옵션을 적용하면 이슈 리포트가 이 영역에 표시됩니다."
+          />
+        );
+      }
+      return <IssuesTable rows={issues} />;
+    }
+
+    if (activeTab === "SNAPSHOTS") {
+      if (!snapshots.length) {
+        return (
+          <EmptyState
+            title="스냅샷 데이터가 없습니다"
+            description="주문과 수수료 비교 결과가 생성되면 여기에서 확인할 수 있습니다."
+          />
+        );
+      }
+      return <SnapshotsTable rows={snapshots} />;
+    }
+
+    if (activeTab === "DAILY") {
+      if (!dailyRows.length) {
+        return (
+          <EmptyState
+            title="일별 정산 데이터가 없습니다"
+            description="일별 정산 파일 업로드 후 결과가 생성되면 이 표에 나타납니다."
+          />
+        );
+      }
+      return <DailyTable rows={dailyRows} />;
+    }
+
+    if (activeTab === "MONTHLY") {
+      if (!monthlyRows.length) {
+        return (
+          <EmptyState
+            title="월별 정산 데이터가 없습니다"
+            description="월별 비교 데이터가 준비되면 이곳에 표시됩니다."
+          />
+        );
+      }
+      return <MonthlyTable rows={monthlyRows} />;
+    }
+
+    if (activeTab === "ORDERS") {
+      if (!orderRows.length) {
+        return (
+          <EmptyState
+            title="건별 정산 데이터가 없습니다"
+            description="주문 상세 검증 결과가 생성되면 이곳에 표시됩니다."
+          />
+        );
+      }
+      return <OrdersTable rows={orderRows} />;
+    }
+
+    if (activeTab === "FEES") {
+      if (!feeRows.length) {
+        return (
+          <EmptyState
+            title="수수료 상세 데이터가 없습니다"
+            description="수수료 상세 비교 결과가 생성되면 이곳에 표시됩니다."
+          />
+        );
+      }
+      return <FeesTable rows={feeRows} />;
+    }
+
+    return (
+      <EmptyState
+        title="표시할 데이터가 없습니다"
+        description="업로드 후 결과가 생성되면 이 영역에 검증 리포트가 나타납니다."
+      />
+    );
+  }
+
+  const capabilityViews = capability?.availableViews ?? [];
+
   return (
-    <div className="space-y-4 p-6">
-      <div>
-        <h1 className="text-2xl font-bold">정산 분석</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          workspace 기준으로 파일을 업로드하고, context 옵션을 반영해 정산 결과를 분석합니다.
-        </p>
+    <div className="h-screen overflow-hidden bg-[#f8fafc] font-sans text-slate-900">
+      <div className="mx-auto flex h-full max-w-[1900px] flex-col px-6 py-6">
+        <header className="mb-5 flex shrink-0 items-center justify-between">
+          <div className="flex items-center gap-4">
+            <h1 className="text-3xl font-black tracking-tighter text-slate-900">
+              Sellivu
+            </h1>
+            <span className="rounded-md bg-blue-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+              Analysis Hub
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {workspace && (
+              <div className="hidden rounded-full border border-slate-200 bg-white px-4 py-1.5 text-[11px] font-bold uppercase text-slate-500 shadow-sm sm:flex sm:items-center sm:gap-2">
+                <div
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    workspace.status === "ACTIVE"
+                      ? "bg-emerald-500"
+                      : "bg-amber-500"
+                  }`}
+                />
+                {workspace.status}
+              </div>
+            )}
+
+            {isAuthenticated && user ? (
+              <>
+                <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 shadow-sm">
+                  {user.name}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
+                >
+                  로그아웃
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={openAuthModal}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
+              >
+                로그인
+              </button>
+            )}
+
+            {workspace && (
+              <button
+                type="button"
+                onClick={handleResetWorkspace}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white transition-all hover:bg-rose-500 active:scale-95"
+              >
+                초기화
+              </button>
+            )}
+          </div>
+        </header>
+
+        {errorMessage && (
+          <div className="mb-5 flex shrink-0 items-center gap-3 rounded-2xl border border-rose-100 bg-rose-50/70 p-4 text-sm font-medium text-rose-600">
+            <AlertIcon className="h-5 w-5" />
+            {errorMessage}
+          </div>
+        )}
+
+        <div className="min-h-0 flex-1 overflow-x-auto">
+          <div className="flex h-full min-w-[1500px] gap-5">
+            <aside className="flex h-full w-[470px] shrink-0 flex-col">
+              <PanelCard
+                title="작업 패널"
+                className="h-full"
+                bodyClassName="p-4"
+                action={
+                  <button
+                    type="button"
+                    onClick={handleSaveWorkspace}
+                    disabled={!canSaveWorkspace}
+                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-md shadow-blue-100 hover:bg-blue-700 disabled:opacity-30"
+                  >
+                    {saveLoading ? "처리 중" : "저장하기"}
+                  </button>
+                }
+              >
+                <div className="flex h-full min-h-0 flex-col gap-4">
+                  <div className="grid shrink-0 grid-cols-[1.15fr_0.95fr] gap-4">
+                    <div className="min-w-0">
+                      <p className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
+                        파일 업로드
+                      </p>
+
+                      <SettlementUploadSection
+                        disabled={!isActiveWorkspace}
+                        onUpload={handleUploadFile}
+                      />
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
+                          분석 옵션 설정
+                        </p>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsOptionEditorOpen(true)}
+                          className="rounded-lg bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-slate-700"
+                        >
+                          옵션 편집
+                        </button>
+                      </div>
+
+                      <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-3">
+                        <div className="grid grid-cols-1 gap-2">
+                          {optionSummary.map((item) => (
+                            <div
+                              key={item.label}
+                              className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2"
+                            >
+                              <span className="text-[12px] font-semibold text-slate-600">
+                                {item.label}
+                              </span>
+                              <OptionBadge value={item.value} />
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsOptionEditorOpen(true)}
+                            className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+                          >
+                            옵션 편집
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveContext}
+                            disabled={contextSaving}
+                            className="flex-1 rounded-xl bg-blue-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {contextSaving ? "적용 중" : "옵션 적용"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="min-h-0 flex-1 rounded-[22px] border border-slate-200 bg-slate-50/60 p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
+                        업로드된 파일 목록
+                      </p>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-slate-500">
+                        {workspaceFiles.length}개
+                      </span>
+                    </div>
+
+                    <div className="h-full overflow-y-auto pr-1 custom-scrollbar">
+                      <UploadedFileListCard
+                        items={workspaceFiles}
+                        removing={removingFile}
+                        onRemove={handleRemoveFile}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </PanelCard>
+            </aside>
+
+            <main className="flex min-w-0 flex-1">
+              <section className="flex min-w-0 flex-1 flex-col">
+                <div className="mb-4 flex shrink-0 items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
+                      Result View
+                    </p>
+
+                    <div className="mt-1 flex flex-wrap items-center gap-3">
+                      <h2 className="text-3xl font-black tracking-tight text-slate-900">
+                        상세 리포트
+                      </h2>
+
+                      {capabilityViews.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {capabilityViews.map((view) => (
+                            <CapabilityBadge
+                              key={view}
+                              label={FileTypeLabel(view)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+                    <SettlementResultTabs
+                      tabs={tabs}
+                      activeTab={activeTab}
+                      onChange={setActiveTab}
+                    />
+                  </div>
+                </div>
+
+                <div className="mb-4 grid shrink-0 grid-cols-4 gap-4">
+                  <KpiCard
+                    label="발견된 이슈"
+                    value={issues.length}
+                    tone={issues.length > 0 ? "rose" : "blue"}
+                    icon={<IssueIcon />}
+                  />
+                  <KpiCard
+                    label="검증 완료"
+                    value={snapshots.length}
+                    tone="emerald"
+                    icon={<CheckIcon />}
+                  />
+                  <KpiCard
+                    label="정산 행"
+                    value={dailyRows.length}
+                    tone="blue"
+                    icon={<SnapshotIcon />}
+                  />
+                  <KpiCard
+                    label="수수료 상세"
+                    value={feeRows.length}
+                    tone="amber"
+                    icon={<AlertIcon />}
+                  />
+                </div>
+
+                <div className="min-h-0 flex-1 rounded-[32px] border border-slate-200 bg-white p-4 shadow-xl shadow-slate-200/60">
+                  <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] border border-slate-100 bg-slate-50/40">
+                    <div className="shrink-0 border-b border-slate-100 px-5 py-4">
+                      <p className="text-sm font-bold text-slate-700">
+                        결과 나오는 페이지
+                      </p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        업로드 및 옵션 적용 결과가 여기에 표시됩니다.
+                      </p>
+                    </div>
+
+                    <div className="min-h-0 flex-1 overflow-auto p-4 custom-scrollbar">
+                      {pageLoading ? (
+                        <div className="flex h-full items-center justify-center">
+                          <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                        </div>
+                      ) : (
+                        renderResultContent()
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </main>
+          </div>
+        </div>
       </div>
 
-      {!isAuthenticated && (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700">
-          현재 게스트 모드입니다. 지금 바로 업로드/분석은 가능하고, 로그인하면 저장 후 이전 작업 조회까지 가능합니다.
-          <button
-            className="ml-3 rounded-lg bg-black px-3 py-2 text-xs font-medium text-white"
-            onClick={openAuthModal}
-          >
-            로그인 / 회원가입
-          </button>
-        </div>
-      )}
+      {isOptionEditorOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/30 backdrop-blur-[1px]">
+          <div className="flex h-full w-[520px] max-w-[92vw] flex-col border-l border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
+                  Analysis Options
+                </p>
+                <h3 className="mt-1 text-2xl font-black tracking-tight text-slate-900">
+                  분석 옵션 편집
+                </h3>
+              </div>
 
-      {isAuthenticated && user && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
-          <span className="font-medium">{user.name}</span>님으로 로그인되어 있습니다.
-        </div>
-      )}
+              <button
+                type="button"
+                onClick={() => setIsOptionEditorOpen(false)}
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50"
+              >
+                닫기
+              </button>
+            </div>
 
-      {workspace && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
-          <div className="flex flex-wrap items-center gap-3">
-            <span>
-              상태: <span className="font-medium">{workspace.status}</span>
-            </span>
-            <span>
-              만료일:{" "}
-              <span className="font-medium">
-                {new Date(workspace.expiresAt).toLocaleString("ko-KR")}
-              </span>
-            </span>
-            {workspace.savedAnalysisSetId && (
-              <span>
-                저장된 분석 ID:{" "}
-                <span className="font-medium">{workspace.savedAnalysisSetId}</span>
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={handleResetWorkspace}
-              className="rounded-lg border px-3 py-2 text-xs"
-            >
-              새 워크스페이스 시작
-            </button>
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 custom-scrollbar">
+              <SettlementContextForm
+                value={context}
+                highlight={capability?.requiresContextOptions ?? false}
+                onChange={handleChangeContext}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-6 py-4">
+              <p className="text-xs text-slate-400">
+                변경한 옵션은 적용 버튼을 눌러야 반영됩니다.
+              </p>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsOptionEditorOpen(false)}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveContext}
+                  disabled={contextSaving}
+                  className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {contextSaving ? "적용 중" : "옵션 적용"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
-
-      {errorMessage && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {errorMessage}
-        </div>
-      )}
-
-      {pageLoading && (
-        <div className="rounded-xl border bg-white p-4 text-sm text-slate-500">
-          데이터를 불러오는 중...
-        </div>
-      )}
-
-      <div className="grid grid-cols-12 gap-6">
-        <aside className="col-span-4">
-          <SettlementLeftPanel
-            context={context}
-            capability={capability}
-            workspaceFiles={(workspace?.files ?? []).filter((file) => file.active)}
-            contextSaving={contextSaving}
-            saveLoading={saveLoading}
-            removingFile={removingFile}
-            isAuthenticated={isAuthenticated}
-            workspaceStatus={workspace?.status ?? null}
-            onUploadFile={handleUploadFile}
-            onRemoveFile={handleRemoveFile}
-            onChangeContext={handleChangeContext}
-            onSaveContext={handleSaveContext}
-            onSaveWorkspace={handleSaveWorkspace}
-          />
-        </aside>
-
-        <main className="col-span-8">
-          {!workspaceSession ? (
-            <div className="rounded-2xl border bg-white p-8 text-sm text-slate-500">
-              워크스페이스를 준비하는 중입니다.
-            </div>
-          ) : (
-            <SettlementRightPanel
-              capability={capability}
-              tabs={tabs}
-              activeTab={activeTab}
-              onChangeTab={setActiveTab}
-              issues={issues}
-              snapshots={snapshots}
-              dailyRows={dailyRows}
-              monthlyRows={monthlyRows}
-              orderRows={orderRows}
-              feeRows={feeRows}
-            />
-          )}
-        </main>
-      </div>
     </div>
   );
 }
