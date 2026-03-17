@@ -1,6 +1,7 @@
 package com.sellivu.backend.settlement.dto;
 
 import com.sellivu.backend.settlement.domain.AnalysisOptionValue;
+import com.sellivu.backend.settlement.domain.SettlementAnalysisContext;
 import com.sellivu.backend.settlement.domain.SettlementWorkspaceContext;
 
 import java.time.LocalDateTime;
@@ -16,6 +17,19 @@ public record WorkspaceContextResponse(
         LocalDateTime updatedAt
 ) {
     public static WorkspaceContextResponse from(SettlementWorkspaceContext context) {
+        return new WorkspaceContextResponse(
+                context.getStoreCouponUsage(),
+                context.getNaverCouponUsage(),
+                context.getPointBenefitUsage(),
+                context.getSafeReturnCareUsage(),
+                context.getBizWalletOffsetUsage(),
+                context.getFastSettlementUsage(),
+                context.getClaimIncluded(),
+                context.getUpdatedAt()
+        );
+    }
+
+    public static WorkspaceContextResponse from(SettlementAnalysisContext context) {
         return new WorkspaceContextResponse(
                 context.getStoreCouponUsage(),
                 context.getNaverCouponUsage(),
