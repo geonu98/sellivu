@@ -25,6 +25,15 @@ public class SettlementAnalysisIssueResponse {
     private final LocalDate issueDate;
     private final LocalDateTime createdAt;
 
+    private final String displayCategory;
+    private final String title;
+    private final String description;
+    private final String impact;
+    private final String actionGuide;
+    private final String statusLabel;
+    private final boolean explainable;
+    private final boolean refundCandidate;
+
     public SettlementAnalysisIssueResponse(
             Long id,
             String sourceType,
@@ -41,7 +50,15 @@ public class SettlementAnalysisIssueResponse {
             boolean needsUserInput,
             String possibleReasonMessage,
             LocalDate issueDate,
-            LocalDateTime createdAt
+            LocalDateTime createdAt,
+            String displayCategory,
+            String title,
+            String description,
+            String impact,
+            String actionGuide,
+            String statusLabel,
+            boolean explainable,
+            boolean refundCandidate
     ) {
         this.id = id;
         this.sourceType = sourceType;
@@ -59,9 +76,20 @@ public class SettlementAnalysisIssueResponse {
         this.possibleReasonMessage = possibleReasonMessage;
         this.issueDate = issueDate;
         this.createdAt = createdAt;
+        this.displayCategory = displayCategory;
+        this.title = title;
+        this.description = description;
+        this.impact = impact;
+        this.actionGuide = actionGuide;
+        this.statusLabel = statusLabel;
+        this.explainable = explainable;
+        this.refundCandidate = refundCandidate;
     }
 
     public static SettlementAnalysisIssueResponse fromEntity(SettlementIssue issue) {
+        SettlementIssuePresentation presentation =
+                SettlementIssuePresentationMapper.from(issue);
+
         return new SettlementAnalysisIssueResponse(
                 issue.getId(),
                 "SNAPSHOT",
@@ -78,7 +106,15 @@ public class SettlementAnalysisIssueResponse {
                 issue.isNeedsUserInput(),
                 buildPossibleReasonMessage(issue.getExplanationCode()),
                 null,
-                issue.getCreatedAt()
+                issue.getCreatedAt(),
+                presentation.displayCategory(),
+                presentation.title(),
+                presentation.description(),
+                presentation.impact(),
+                presentation.actionGuide(),
+                presentation.statusLabel(),
+                presentation.explainable(),
+                presentation.refundCandidate()
         );
     }
 
@@ -86,6 +122,9 @@ public class SettlementAnalysisIssueResponse {
             SettlementIssue issue,
             LocalDate issueDate
     ) {
+        SettlementIssuePresentation presentation =
+                SettlementIssuePresentationMapper.from(issue);
+
         return new SettlementAnalysisIssueResponse(
                 issue.getId(),
                 "DAILY_CROSS_CHECK",
@@ -102,7 +141,15 @@ public class SettlementAnalysisIssueResponse {
                 issue.isNeedsUserInput(),
                 buildPossibleReasonMessage(issue.getExplanationCode()),
                 issueDate,
-                issue.getCreatedAt()
+                issue.getCreatedAt(),
+                presentation.displayCategory(),
+                presentation.title(),
+                presentation.description(),
+                presentation.impact(),
+                presentation.actionGuide(),
+                presentation.statusLabel(),
+                presentation.explainable(),
+                presentation.refundCandidate()
         );
     }
 
@@ -185,5 +232,37 @@ public class SettlementAnalysisIssueResponse {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public String getDisplayCategory() {
+        return displayCategory;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public String getImpact() {
+        return impact;
+    }
+
+    public String getActionGuide() {
+        return actionGuide;
+    }
+
+    public String getStatusLabel() {
+        return statusLabel;
+    }
+
+    public boolean isExplainable() {
+        return explainable;
+    }
+
+    public boolean isRefundCandidate() {
+        return refundCandidate;
     }
 }
