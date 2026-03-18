@@ -225,8 +225,8 @@ function OptionBadge({ value }: { value: string }) {
     value === "YES"
       ? "bg-emerald-50 text-emerald-700 border-emerald-100"
       : value === "NO"
-      ? "bg-rose-50 text-rose-700 border-rose-100"
-      : "bg-slate-100 text-slate-600 border-slate-200";
+        ? "bg-rose-50 text-rose-700 border-rose-100"
+        : "bg-slate-100 text-slate-600 border-slate-200";
 
   return (
     <span
@@ -337,6 +337,8 @@ function EmptyBoxIcon({ className = "h-8 w-8" }: { className?: string }) {
 
 export default function SettlementAnalysisPage() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isAuthInitialized = useAuthStore((state) => state.isAuthInitialized);
+  const accessToken = useAuthStore((state) => state.accessToken);
   const user = useAuthStore((state) => state.user);
   const openAuthModal = useAuthStore((state) => state.openAuthModal);
   const clearAuth = useAuthStore((state) => state.clearAuth);
@@ -364,6 +366,7 @@ export default function SettlementAnalysisPage() {
   const [saveLoading, setSaveLoading] = useState(false);
   const [removingFile, setRemovingFile] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [skipAutoInitOnce, setSkipAutoInitOnce] = useState(false);
 
   const workspaceFiles = (workspace?.files ?? []).filter((file) => file.active);
   const isActiveWorkspace = workspace?.status === "ACTIVE";
@@ -423,37 +426,59 @@ export default function SettlementAnalysisPage() {
     setFeeRows(feesRes as FeeRow[]);
   }
 
-  async function initializeWorkspace() {
+  async function initializeWorkspace(forceCreate = false) {
     setPageLoading(true);
     setErrorMessage(null);
 
     try {
       const savedSession = loadWorkspaceSession();
 
-      if (savedSession) {
-        const workspaceRes = await fetchWorkspace(
-          savedSession.workspaceKey,
-          savedSession.workspaceToken
-        );
+      const candidateSession = forceCreate
+  ? null
+  : (workspaceSession || (isAuthenticated ? savedSession : null));
 
-        const nextSession: WorkspaceSession = {
-          ...savedSession,
-          savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
-        };
+if (candidateSession) {
+  const workspaceRes = await fetchWorkspace(
+    candidateSession.workspaceKey,
+    candidateSession.workspaceToken
+  );
 
-        setWorkspaceSession(nextSession);
-        saveWorkspaceSession(nextSession);
-        setWorkspace(workspaceRes);
-        setContext(workspaceRes.context ?? null);
-        setCapability(workspaceRes.capability ?? null);
+  const shouldDropEmptyGuestAfterLogin =
+    isAuthenticated &&
+    workspaceRes.ownerType === "GUEST" &&
+    (workspaceRes.files?.length ?? 0) === 0 &&
+    workspaceRes.savedAnalysisSetId == null;
 
-        await loadWorkspaceResultData(
-          savedSession.workspaceKey,
-          savedSession.workspaceToken,
-          workspaceRes.capability
-        );
-        return;
-      }
+  if (!shouldDropEmptyGuestAfterLogin) {
+    const nextSession: WorkspaceSession = {
+      ...candidateSession,
+      savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
+    };
+
+    setWorkspaceSession(nextSession);
+
+    if (isAuthenticated) {
+      saveWorkspaceSession(nextSession);
+    }
+
+    setWorkspace(workspaceRes);
+    setContext(workspaceRes.context ?? null);
+    setCapability(workspaceRes.capability ?? null);
+
+    await loadWorkspaceResultData(
+      nextSession.workspaceKey,
+      nextSession.workspaceToken,
+      workspaceRes.capability
+    );
+    return;
+  }
+
+  clearWorkspaceSession();
+  setWorkspaceSession(null);
+}
+
+      clearWorkspaceSession();
+      setWorkspaceSession(null);
 
       const created = await createWorkspace();
 
@@ -467,7 +492,6 @@ export default function SettlementAnalysisPage() {
         savedAnalysisSetId: null,
       };
 
-      saveWorkspaceSession(session);
       setWorkspaceSession(session);
 
       const workspaceRes = await fetchWorkspace(
@@ -481,7 +505,11 @@ export default function SettlementAnalysisPage() {
       };
 
       setWorkspaceSession(nextSession);
-      saveWorkspaceSession(nextSession);
+
+      if (isAuthenticated) {
+        saveWorkspaceSession(nextSession);
+      }
+
       setWorkspace(workspaceRes);
       setContext(workspaceRes.context ?? null);
       setCapability(workspaceRes.capability ?? null);
@@ -527,7 +555,10 @@ export default function SettlementAnalysisPage() {
     };
 
     setWorkspaceSession(nextSession);
-    saveWorkspaceSession(nextSession);
+
+    if (isAuthenticated) {
+      saveWorkspaceSession(nextSession);
+    }
 
     await loadWorkspaceResultData(
       workspaceSession.workspaceKey,
@@ -642,7 +673,19 @@ export default function SettlementAnalysisPage() {
     } catch {
       // ignore
     } finally {
+      setSkipAutoInitOnce(true);
       clearAuth();
+      clearWorkspaceSession();
+      setWorkspaceSession(null);
+      setWorkspace(null);
+      setCapability(null);
+      setContext(null);
+      setIssues([]);
+      setSnapshots([]);
+      setDailyRows([]);
+      setMonthlyRows([]);
+      setOrderRows([]);
+      setFeeRows([]);
     }
   }
 
@@ -658,12 +701,20 @@ export default function SettlementAnalysisPage() {
     setMonthlyRows([]);
     setOrderRows([]);
     setFeeRows([]);
-    await initializeWorkspace();
+    await initializeWorkspace(true);
   }
 
   useEffect(() => {
+    if (!isAuthInitialized) return;
+    if (isAuthenticated && !accessToken) return;
+
+    if (skipAutoInitOnce) {
+      setSkipAutoInitOnce(false);
+      return;
+    }
+
     initializeWorkspace();
-  }, []);
+  }, [isAuthInitialized, isAuthenticated, accessToken, skipAutoInitOnce]);
 
   const tabs = useMemo(
     () => buildTabs(capability?.availableViews ?? []),

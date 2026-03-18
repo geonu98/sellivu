@@ -50,7 +50,14 @@ public class SettlementWorkspaceService {
                 ? SettlementWorkspace.createGuest(encodedToken, expiresAt)
                 : SettlementWorkspace.createUser(userId, encodedToken, expiresAt);
 
+        System.out.println("before save ownerType = " + workspace.getOwnerType());
+        System.out.println("before save userId = " + workspace.getUserId());
+
         SettlementWorkspace savedWorkspace = workspaceRepository.save(workspace);
+
+        System.out.println("after save ownerType = " + savedWorkspace.getOwnerType());
+        System.out.println("after save userId = " + savedWorkspace.getUserId());
+        System.out.println("after save workspaceKey = " + savedWorkspace.getWorkspaceKey());
 
         workspaceContextRepository.save(
                 SettlementWorkspaceContext.createDefault(savedWorkspace.getId())

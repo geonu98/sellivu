@@ -67,6 +67,7 @@ public class AuthController {
                 tokens.role(),
                 tokens.accessToken()
         );
+
     }
 
     @PostMapping("/auth/refresh")
