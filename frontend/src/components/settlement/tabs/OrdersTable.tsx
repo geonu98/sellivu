@@ -25,7 +25,7 @@ export default function OrdersTable({ rows }: Props) {
             <th className="px-4 py-3">상품명</th>
             <th className="px-4 py-3">정산일</th>
             <th className="px-4 py-3">정산금액</th>
-            <th className="px-4 py-3">혜택정산</th>
+            <th className="px-4 py-3">수수료</th>
             <th className="px-4 py-3">순정산금액</th>
           </tr>
         </thead>
@@ -37,7 +37,7 @@ export default function OrdersTable({ rows }: Props) {
               <td className="px-4 py-3">{row.productName || "-"}</td>
               <td className="px-4 py-3">{formatDate(row.settlementDate)}</td>
               <td className="px-4 py-3">{formatNumber(row.settlementAmount)}</td>
-              <td className="px-4 py-3">{formatNumber(row.benefitAmount)}</td>
+              <td className="px-4 py-3">{formatNumber(row.commissionAmount)}</td>
               <td className="px-4 py-3">{formatNumber(row.netAmount)}</td>
             </tr>
           ))}

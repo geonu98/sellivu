@@ -38,7 +38,7 @@ export default function SnapshotsTable({ rows }: Props) {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.snapshotId} className="border-t">
+            <tr key={row.id} className="border-t">
               <td className="px-4 py-3">{row.productOrderNo || "-"}</td>
               <td className="px-4 py-3">{row.orderNo || "-"}</td>
               <td className="px-4 py-3">{row.productName || "-"}</td>

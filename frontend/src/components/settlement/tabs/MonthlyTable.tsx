@@ -21,9 +21,7 @@ export default function MonthlyTable({ rows }: Props) {
           <tr>
             <th className="px-4 py-3">월</th>
             <th className="px-4 py-3">정산금액</th>
-            <th className="px-4 py-3">혜택정산</th>
-            <th className="px-4 py-3">공제/환급</th>
-            <th className="px-4 py-3">순금액</th>
+            <th className="px-4 py-3">주문건수</th>
           </tr>
         </thead>
         <tbody>
@@ -31,9 +29,7 @@ export default function MonthlyTable({ rows }: Props) {
             <tr key={row.month} className="border-t">
               <td className="px-4 py-3">{row.month}</td>
               <td className="px-4 py-3">{formatNumber(row.settlementAmount)}</td>
-              <td className="px-4 py-3">{formatNumber(row.benefitAmount)}</td>
-              <td className="px-4 py-3">{formatNumber(row.deductionRefundAmount)}</td>
-              <td className="px-4 py-3">{formatNumber(row.netAmount)}</td>
+              <td className="px-4 py-3">{formatNumber(row.orderCount)}</td>
             </tr>
           ))}
         </tbody>

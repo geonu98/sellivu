@@ -6,13 +6,7 @@ import com.sellivu.backend.settlement.dto.SettlementFeeRowResponse;
 import com.sellivu.backend.settlement.dto.SettlementMonthlySummaryResponse;
 import com.sellivu.backend.settlement.dto.SettlementOrderRowResponse;
 import com.sellivu.backend.settlement.dto.SettlementSnapshotResponse;
-import com.sellivu.backend.settlement.service.SettlementAnalysisDailyService;
-import com.sellivu.backend.settlement.service.SettlementAnalysisFeeService;
-import com.sellivu.backend.settlement.service.SettlementAnalysisIssueService;
-import com.sellivu.backend.settlement.service.SettlementAnalysisMonthlyService;
-import com.sellivu.backend.settlement.service.SettlementAnalysisOrderService;
-import com.sellivu.backend.settlement.service.SettlementAnalysisSetService;
-import com.sellivu.backend.settlement.service.SettlementAnalysisSnapshotService;
+import com.sellivu.backend.settlement.service.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 

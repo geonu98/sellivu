@@ -22,7 +22,6 @@ export default function FeesTable({ rows }: Props) {
           <tr>
             <th className="px-4 py-3">주문번호</th>
             <th className="px-4 py-3">상품주문번호</th>
-            <th className="px-4 py-3">상품명</th>
             <th className="px-4 py-3">정산일</th>
             <th className="px-4 py-3">수수료금액</th>
             <th className="px-4 py-3">수수료유형</th>
@@ -34,9 +33,10 @@ export default function FeesTable({ rows }: Props) {
             <tr key={row.id} className="border-t">
               <td className="px-4 py-3">{row.orderNo || "-"}</td>
               <td className="px-4 py-3">{row.productOrderNo || "-"}</td>
-              <td className="px-4 py-3">{row.productName || "-"}</td>
               <td className="px-4 py-3">{formatDate(row.settlementDate)}</td>
-              <td className="px-4 py-3">{formatNumber(row.feeAmount)}</td>
+              <td className="px-4 py-3">
+                {formatNumber(row.commissionAmount)}
+              </td>
               <td className="px-4 py-3">{row.feeType || "-"}</td>
               <td className="px-4 py-3">{formatNumber(row.netAmount)}</td>
             </tr>

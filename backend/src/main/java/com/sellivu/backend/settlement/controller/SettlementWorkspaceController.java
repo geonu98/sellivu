@@ -12,6 +12,7 @@ import org.springframework.security.core.Authentication;
 import java.lang.reflect.Method;
 import java.util.List;
 
+
 @RestController
 @RequestMapping("/api/settlement/workspaces")
 @RequiredArgsConstructor
@@ -25,6 +26,7 @@ public class SettlementWorkspaceController {
     private final SettlementWorkspaceCapabilityService settlementWorkspaceCapabilityService;
     private final SettlementWorkspaceIssueService settlementWorkspaceIssueService;
     private final SettlementWorkspaceSaveService settlementWorkspaceSaveService;
+
 
 
 

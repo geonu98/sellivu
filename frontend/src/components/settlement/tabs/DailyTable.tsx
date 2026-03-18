@@ -33,13 +33,25 @@ export default function DailyTable({ rows }: Props) {
         <tbody>
           {rows.map((row) => (
             <tr key={row.id} className="border-t">
-              <td className="px-4 py-3">{formatDate(row.settlementDate)}</td>
+              <td className="px-4 py-3">
+                {formatDate(row.settlementCompletedDate)}
+              </td>
               <td className="px-4 py-3">{formatNumber(row.settlementAmount)}</td>
-              <td className="px-4 py-3">{formatNumber(row.benefitAmount)}</td>
-              <td className="px-4 py-3">{formatNumber(row.deductionRefundAmount)}</td>
-              <td className="px-4 py-3">{formatNumber(row.bizWalletOffsetAmount)}</td>
-              <td className="px-4 py-3">{formatNumber(row.safeReturnCareAmount)}</td>
-              <td className="px-4 py-3">{formatNumber(row.preferredFeeRefundAmount)}</td>
+              <td className="px-4 py-3">
+                {formatNumber(row.benefitSettlementAmount)}
+              </td>
+              <td className="px-4 py-3">
+                {formatNumber(row.dailyDeductionRefundAmount)}
+              </td>
+              <td className="px-4 py-3">
+                {formatNumber(row.bizWalletOffsetAmount)}
+              </td>
+              <td className="px-4 py-3">
+                {formatNumber(row.safeReturnCareCost)}
+              </td>
+              <td className="px-4 py-3">
+                {formatNumber(row.preferredFeeRefundAmount)}
+              </td>
               <td className="px-4 py-3">{row.settlementMethod || "-"}</td>
             </tr>
           ))}
