@@ -13,6 +13,16 @@ import {
   updateWorkspaceContext,
   uploadWorkspaceFile,
 } from "../../api/settlementWorkspaceApi";
+import {
+  fetchAnalysisSets,
+  fetchAnalysisSetCapability,
+  fetchAnalysisSetDailyRows,
+  fetchAnalysisSetFeeRows,
+  fetchAnalysisSetIssues,
+  fetchAnalysisSetMonthlyRows,
+  fetchAnalysisSetOrderRows,
+  fetchAnalysisSetSnapshots,
+} from "../../api/settlementAnalysisSetApi";
 import { authApi } from "../../api/authApi";
 import SettlementUploadSection from "../../components/settlement/upload/SettlementUploadSection";
 import UploadedFileListCard from "../../components/settlement/upload/UploadedFileListCard";
@@ -27,6 +37,7 @@ import FeesTable from "../../components/settlement/tabs/FeesTable";
 import type {
   AnalysisCapabilityResponse,
   AnalysisContextResponse,
+  AnalysisSetResponse,
   DailyRow,
   FeeRow,
   IssueRow,
@@ -358,6 +369,13 @@ export default function SettlementAnalysisPage() {
   const [orderRows, setOrderRows] = useState<OrderRow[]>([]);
   const [feeRows, setFeeRows] = useState<FeeRow[]>([]);
 
+  const [analysisSets, setAnalysisSets] = useState<AnalysisSetResponse[]>([]);
+  const [analysisSetsLoading, setAnalysisSetsLoading] = useState(false);
+  const [selectedAnalysisSetId, setSelectedAnalysisSetId] = useState<
+    number | null
+  >(null);
+  const [isViewingSavedAnalysis, setIsViewingSavedAnalysis] = useState(false);
+
   const [activeTab, setActiveTab] = useState<TabKey>("OVERVIEW");
   const [isOptionEditorOpen, setIsOptionEditorOpen] = useState(false);
 
@@ -371,7 +389,11 @@ export default function SettlementAnalysisPage() {
   const workspaceFiles = (workspace?.files ?? []).filter((file) => file.active);
   const isActiveWorkspace = workspace?.status === "ACTIVE";
   const hasConnectedFiles = workspaceFiles.length > 0;
-  const canSaveWorkspace = isActiveWorkspace && hasConnectedFiles && !saveLoading;
+  const canSaveWorkspace =
+    isActiveWorkspace &&
+    hasConnectedFiles &&
+    !saveLoading &&
+    !isViewingSavedAnalysis;
 
   const normalizedContext = useMemo(() => normalizeContext(context), [context]);
 
@@ -426,6 +448,72 @@ export default function SettlementAnalysisPage() {
     setFeeRows(feesRes as FeeRow[]);
   }
 
+  async function refreshAnalysisSets() {
+    if (!isAuthenticated) {
+      setAnalysisSets([]);
+      return;
+    }
+
+    setAnalysisSetsLoading(true);
+
+    try {
+      const data = await fetchAnalysisSets();
+      setAnalysisSets(data);
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error));
+    } finally {
+      setAnalysisSetsLoading(false);
+    }
+  }
+
+  async function handleOpenAnalysisSet(analysisSetId: number) {
+    setPageLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const [
+        capabilityRes,
+        issuesRes,
+        snapshotsRes,
+        dailyRes,
+        monthlyRes,
+        orderRes,
+        feeRes,
+      ] = await Promise.all([
+        fetchAnalysisSetCapability(analysisSetId),
+        fetchAnalysisSetIssues(analysisSetId),
+        fetchAnalysisSetSnapshots(analysisSetId),
+        fetchAnalysisSetDailyRows(analysisSetId),
+        fetchAnalysisSetMonthlyRows(analysisSetId),
+        fetchAnalysisSetOrderRows(analysisSetId),
+        fetchAnalysisSetFeeRows(analysisSetId),
+      ]);
+
+      setSelectedAnalysisSetId(analysisSetId);
+      setIsViewingSavedAnalysis(true);
+
+      setCapability(capabilityRes);
+      setContext(null);
+
+      setIssues(issuesRes);
+      setSnapshots(snapshotsRes);
+      setDailyRows(dailyRes);
+      setMonthlyRows(monthlyRes);
+      setOrderRows(orderRes);
+      setFeeRows(feeRes);
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error));
+    } finally {
+      setPageLoading(false);
+    }
+  }
+
+  async function handleBackToWorkspace() {
+    setIsViewingSavedAnalysis(false);
+    setSelectedAnalysisSetId(null);
+    await refreshWorkspace();
+  }
+
   async function initializeWorkspace(forceCreate = false) {
     setPageLoading(true);
     setErrorMessage(null);
@@ -434,48 +522,48 @@ export default function SettlementAnalysisPage() {
       const savedSession = loadWorkspaceSession();
 
       const candidateSession = forceCreate
-  ? null
-  : (workspaceSession || (isAuthenticated ? savedSession : null));
+        ? null
+        : workspaceSession || (isAuthenticated ? savedSession : null);
 
-if (candidateSession) {
-  const workspaceRes = await fetchWorkspace(
-    candidateSession.workspaceKey,
-    candidateSession.workspaceToken
-  );
+      if (candidateSession) {
+        const workspaceRes = await fetchWorkspace(
+          candidateSession.workspaceKey,
+          candidateSession.workspaceToken
+        );
 
-  const shouldDropEmptyGuestAfterLogin =
-    isAuthenticated &&
-    workspaceRes.ownerType === "GUEST" &&
-    (workspaceRes.files?.length ?? 0) === 0 &&
-    workspaceRes.savedAnalysisSetId == null;
+        const shouldDropEmptyGuestAfterLogin =
+          isAuthenticated &&
+          workspaceRes.ownerType === "GUEST" &&
+          (workspaceRes.files?.length ?? 0) === 0 &&
+          workspaceRes.savedAnalysisSetId == null;
 
-  if (!shouldDropEmptyGuestAfterLogin) {
-    const nextSession: WorkspaceSession = {
-      ...candidateSession,
-      savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
-    };
+        if (!shouldDropEmptyGuestAfterLogin) {
+          const nextSession: WorkspaceSession = {
+            ...candidateSession,
+            savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
+          };
 
-    setWorkspaceSession(nextSession);
+          setWorkspaceSession(nextSession);
 
-    if (isAuthenticated) {
-      saveWorkspaceSession(nextSession);
-    }
+          if (isAuthenticated) {
+            saveWorkspaceSession(nextSession);
+          }
 
-    setWorkspace(workspaceRes);
-    setContext(workspaceRes.context ?? null);
-    setCapability(workspaceRes.capability ?? null);
+          setWorkspace(workspaceRes);
+          setContext(workspaceRes.context ?? null);
+          setCapability(workspaceRes.capability ?? null);
 
-    await loadWorkspaceResultData(
-      nextSession.workspaceKey,
-      nextSession.workspaceToken,
-      workspaceRes.capability
-    );
-    return;
-  }
+          await loadWorkspaceResultData(
+            nextSession.workspaceKey,
+            nextSession.workspaceToken,
+            workspaceRes.capability
+          );
+          return;
+        }
 
-  clearWorkspaceSession();
-  setWorkspaceSession(null);
-}
+        clearWorkspaceSession();
+        setWorkspaceSession(null);
+      }
 
       clearWorkspaceSession();
       setWorkspaceSession(null);
@@ -568,7 +656,7 @@ if (candidateSession) {
   }
 
   async function handleUploadFile(file: File, fileType: SettlementFileType) {
-    if (!workspaceSession) return;
+    if (!workspaceSession || isViewingSavedAnalysis) return;
 
     setErrorMessage(null);
 
@@ -586,7 +674,7 @@ if (candidateSession) {
   }
 
   async function handleRemoveFile(workspaceFileId: number) {
-    if (!workspaceSession) return;
+    if (!workspaceSession || isViewingSavedAnalysis) return;
 
     setRemovingFile(true);
     setErrorMessage(null);
@@ -613,7 +701,7 @@ if (candidateSession) {
   }
 
   async function handleSaveContext() {
-    if (!workspaceSession) return;
+    if (!workspaceSession || isViewingSavedAnalysis) return;
 
     setContextSaving(true);
     setErrorMessage(null);
@@ -649,7 +737,7 @@ if (candidateSession) {
       return;
     }
 
-    if (!workspaceSession) return;
+    if (!workspaceSession || isViewingSavedAnalysis) return;
 
     setSaveLoading(true);
     setErrorMessage(null);
@@ -660,6 +748,7 @@ if (candidateSession) {
         workspaceSession.workspaceToken
       );
       await refreshWorkspace();
+      await refreshAnalysisSets();
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error));
     } finally {
@@ -686,6 +775,9 @@ if (candidateSession) {
       setMonthlyRows([]);
       setOrderRows([]);
       setFeeRows([]);
+      setAnalysisSets([]);
+      setSelectedAnalysisSetId(null);
+      setIsViewingSavedAnalysis(false);
     }
   }
 
@@ -701,6 +793,8 @@ if (candidateSession) {
     setMonthlyRows([]);
     setOrderRows([]);
     setFeeRows([]);
+    setSelectedAnalysisSetId(null);
+    setIsViewingSavedAnalysis(false);
     await initializeWorkspace(true);
   }
 
@@ -715,6 +809,19 @@ if (candidateSession) {
 
     initializeWorkspace();
   }, [isAuthInitialized, isAuthenticated, accessToken, skipAutoInitOnce]);
+
+  useEffect(() => {
+    if (!isAuthInitialized) return;
+
+    if (!isAuthenticated) {
+      setAnalysisSets([]);
+      setSelectedAnalysisSetId(null);
+      setIsViewingSavedAnalysis(false);
+      return;
+    }
+
+    refreshAnalysisSets();
+  }, [isAuthInitialized, isAuthenticated]);
 
   const tabs = useMemo(
     () => buildTabs(capability?.availableViews ?? []),
@@ -905,7 +1012,7 @@ if (candidateSession) {
                       </p>
 
                       <SettlementUploadSection
-                        disabled={!isActiveWorkspace}
+                        disabled={!isActiveWorkspace || isViewingSavedAnalysis}
                         onUpload={handleUploadFile}
                       />
                     </div>
@@ -919,7 +1026,8 @@ if (candidateSession) {
                         <button
                           type="button"
                           onClick={() => setIsOptionEditorOpen(true)}
-                          className="rounded-lg bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-slate-700"
+                          disabled={isViewingSavedAnalysis}
+                          className="rounded-lg bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-slate-700 disabled:opacity-40"
                         >
                           옵션 편집
                         </button>
@@ -944,14 +1052,15 @@ if (candidateSession) {
                           <button
                             type="button"
                             onClick={() => setIsOptionEditorOpen(true)}
-                            className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+                            disabled={isViewingSavedAnalysis}
+                            className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                           >
                             옵션 편집
                           </button>
                           <button
                             type="button"
                             onClick={handleSaveContext}
-                            disabled={contextSaving}
+                            disabled={contextSaving || isViewingSavedAnalysis}
                             className="flex-1 rounded-xl bg-blue-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-blue-700 disabled:opacity-50"
                           >
                             {contextSaving ? "적용 중" : "옵션 적용"}
@@ -974,10 +1083,68 @@ if (candidateSession) {
                     <div className="h-full overflow-y-auto pr-1 custom-scrollbar">
                       <UploadedFileListCard
                         items={workspaceFiles}
-                        removing={removingFile}
+                        removing={removingFile || isViewingSavedAnalysis}
                         onRemove={handleRemoveFile}
                       />
                     </div>
+                  </div>
+
+                  <div className="rounded-[22px] border border-slate-200 bg-slate-50/60 p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
+                        저장본 목록
+                      </p>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-slate-500">
+                        {analysisSets.length}개
+                      </span>
+                    </div>
+
+                    {!isAuthenticated ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-center text-[12px] text-slate-500">
+                        로그인 후 저장본을 확인할 수 있습니다.
+                      </div>
+                    ) : analysisSetsLoading ? (
+                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-4 text-center text-[12px] text-slate-500">
+                        저장본 불러오는 중...
+                      </div>
+                    ) : analysisSets.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-center text-[12px] text-slate-500">
+                        저장된 분석이 없습니다.
+                      </div>
+                    ) : (
+                      <div className="max-h-[220px] space-y-2 overflow-y-auto pr-1 custom-scrollbar">
+                        {analysisSets.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => handleOpenAnalysisSet(item.id)}
+                            className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                              selectedAnalysisSetId === item.id &&
+                              isViewingSavedAnalysis
+                                ? "border-blue-200 bg-blue-50"
+                                : "border-slate-200 bg-white hover:bg-slate-50"
+                            }`}
+                          >
+                            <div className="text-[13px] font-bold text-slate-800">
+                              {item.name}
+                            </div>
+                            <div className="mt-1 text-[11px] text-slate-500">
+                              ID {item.id}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {isViewingSavedAnalysis && (
+                      <button
+                        type="button"
+                        onClick={handleBackToWorkspace}
+                        className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+                      >
+                        현재 워크스페이스로 돌아가기
+                      </button>
+                    )}
                   </div>
                 </div>
               </PanelCard>
@@ -1119,7 +1286,7 @@ if (candidateSession) {
                 <button
                   type="button"
                   onClick={handleSaveContext}
-                  disabled={contextSaving}
+                  disabled={contextSaving || isViewingSavedAnalysis}
                   className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
                 >
                   {contextSaving ? "적용 중" : "옵션 적용"}
