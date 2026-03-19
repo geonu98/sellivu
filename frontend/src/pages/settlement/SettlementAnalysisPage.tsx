@@ -181,16 +181,16 @@ function KpiCard({
   }[tone];
 
   return (
-    <div className={`rounded-[22px] border p-4 shadow-sm ${toneClass.wrap}`}>
+    <div className={`rounded-[20px] border p-3.5 shadow-sm ${toneClass.wrap}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold">{label}</p>
-          <p className={`mt-3 text-3xl font-black ${toneClass.value}`}>
+          <p className="text-[12px] font-semibold">{label}</p>
+          <p className={`mt-2 text-[30px] font-black ${toneClass.value}`}>
             {value}
           </p>
         </div>
         <div
-          className={`flex h-11 w-11 items-center justify-center rounded-full ${toneClass.icon}`}
+          className={`flex h-10 w-10 items-center justify-center rounded-full ${toneClass.icon}`}
         >
           {icon}
         </div>
@@ -919,8 +919,8 @@ export default function SettlementAnalysisPage() {
 
   return (
     <div className="h-screen overflow-hidden bg-[#f8fafc] font-sans text-slate-900">
-      <div className="mx-auto flex h-full max-w-[1900px] flex-col px-6 py-6">
-        <header className="mb-5 flex shrink-0 items-center justify-between">
+      <div className="mx-auto flex h-full max-w-[1820px] flex-col px-5 py-5">
+        <header className="mb-4 flex shrink-0 items-center justify-between">
           <div className="flex items-center gap-4">
             <h1 className="text-3xl font-black tracking-tighter text-slate-900">
               Sellivu
@@ -980,15 +980,15 @@ export default function SettlementAnalysisPage() {
         </header>
 
         {errorMessage && (
-          <div className="mb-5 flex shrink-0 items-center gap-3 rounded-2xl border border-rose-100 bg-rose-50/70 p-4 text-sm font-medium text-rose-600">
+          <div className="mb-4 flex shrink-0 items-center gap-3 rounded-2xl border border-rose-100 bg-rose-50/70 p-4 text-sm font-medium text-rose-600">
             <AlertIcon className="h-5 w-5" />
             {errorMessage}
           </div>
         )}
 
         <div className="min-h-0 flex-1 overflow-x-auto">
-          <div className="flex h-full min-w-[1500px] gap-5">
-            <aside className="flex h-full w-[470px] shrink-0 flex-col">
+          <div className="flex h-full min-w-[1440px] gap-4">
+            <aside className="flex h-full w-[450px] shrink-0 flex-col">
               <PanelCard
                 title="작업 패널"
                 className="h-full"
@@ -1004,21 +1004,23 @@ export default function SettlementAnalysisPage() {
                   </button>
                 }
               >
-                <div className="flex h-full min-h-0 flex-col gap-4">
-                  <div className="grid shrink-0 grid-cols-[1.15fr_0.95fr] gap-4">
+                <div className="flex h-full min-h-0 flex-col gap-3">
+                  <div className="grid shrink-0 grid-cols-[1.02fr_0.98fr] gap-3">
                     <div className="min-w-0">
-                      <p className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
+                      <p className="mb-2 text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
                         파일 업로드
                       </p>
 
-                      <SettlementUploadSection
-                        disabled={!isActiveWorkspace || isViewingSavedAnalysis}
-                        onUpload={handleUploadFile}
-                      />
+                      <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-3">
+                        <SettlementUploadSection
+                          disabled={!isActiveWorkspace || isViewingSavedAnalysis}
+                          onUpload={handleUploadFile}
+                        />
+                      </div>
                     </div>
 
                     <div className="min-w-0">
-                      <div className="mb-3 flex items-center justify-between gap-2">
+                      <div className="mb-2 flex items-center justify-between gap-2">
                         <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
                           분석 옵션 설정
                         </p>
@@ -1070,81 +1072,85 @@ export default function SettlementAnalysisPage() {
                     </div>
                   </div>
 
-                  <div className="min-h-0 flex-1 rounded-[22px] border border-slate-200 bg-slate-50/60 p-4">
-                    <div className="mb-3 flex items-center justify-between">
-                      <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
-                        업로드된 파일 목록
-                      </p>
-                      <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-slate-500">
-                        {workspaceFiles.length}개
-                      </span>
+                  <div className="grid min-h-0 flex-1 grid-rows-[1fr_1fr] gap-3">
+                    <div className="min-h-0 rounded-[22px] border border-slate-200 bg-slate-50/60 p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
+                          업로드된 파일 목록
+                        </p>
+                        <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-slate-500">
+                          {workspaceFiles.length}개
+                        </span>
+                      </div>
+
+                      <div className="h-[calc(100%-28px)] overflow-y-auto pr-1 custom-scrollbar">
+                        <UploadedFileListCard
+                          items={workspaceFiles}
+                          removing={removingFile || isViewingSavedAnalysis}
+                          onRemove={handleRemoveFile}
+                        />
+                      </div>
                     </div>
 
-                    <div className="h-full overflow-y-auto pr-1 custom-scrollbar">
-                      <UploadedFileListCard
-                        items={workspaceFiles}
-                        removing={removingFile || isViewingSavedAnalysis}
-                        onRemove={handleRemoveFile}
-                      />
+                    <div className="min-h-0 rounded-[22px] border border-slate-200 bg-slate-50/60 p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
+                          저장본 목록
+                        </p>
+                        <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-slate-500">
+                          {analysisSets.length}개
+                        </span>
+                      </div>
+
+                      <div className="h-[calc(100%-28px)] overflow-y-auto pr-1 custom-scrollbar">
+                        {!isAuthenticated ? (
+                          <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-center text-[12px] text-slate-500">
+                            로그인 후 저장본을 확인할 수 있습니다.
+                          </div>
+                        ) : analysisSetsLoading ? (
+                          <div className="rounded-xl border border-slate-200 bg-white px-3 py-4 text-center text-[12px] text-slate-500">
+                            저장본 불러오는 중...
+                          </div>
+                        ) : analysisSets.length === 0 ? (
+                          <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-center text-[12px] text-slate-500">
+                            저장된 분석이 없습니다.
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {analysisSets.map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => handleOpenAnalysisSet(item.id)}
+                                className={`w-full rounded-xl border px-3 py-2.5 text-left transition ${
+                                  selectedAnalysisSetId === item.id &&
+                                  isViewingSavedAnalysis
+                                    ? "border-blue-200 bg-blue-50"
+                                    : "border-slate-200 bg-white hover:bg-slate-50"
+                                }`}
+                              >
+                                <div className="truncate text-[13px] font-bold text-slate-800">
+                                  {item.name}
+                                </div>
+                                <div className="mt-1 text-[11px] text-slate-500">
+                                  ID {item.id}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {isViewingSavedAnalysis && (
+                        <button
+                          type="button"
+                          onClick={handleBackToWorkspace}
+                          className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+                        >
+                          현재 워크스페이스로 돌아가기
+                        </button>
+                      )}
                     </div>
-                  </div>
-
-                  <div className="rounded-[22px] border border-slate-200 bg-slate-50/60 p-4">
-                    <div className="mb-3 flex items-center justify-between">
-                      <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
-                        저장본 목록
-                      </p>
-                      <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-slate-500">
-                        {analysisSets.length}개
-                      </span>
-                    </div>
-
-                    {!isAuthenticated ? (
-                      <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-center text-[12px] text-slate-500">
-                        로그인 후 저장본을 확인할 수 있습니다.
-                      </div>
-                    ) : analysisSetsLoading ? (
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-4 text-center text-[12px] text-slate-500">
-                        저장본 불러오는 중...
-                      </div>
-                    ) : analysisSets.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-center text-[12px] text-slate-500">
-                        저장된 분석이 없습니다.
-                      </div>
-                    ) : (
-                      <div className="max-h-[220px] space-y-2 overflow-y-auto pr-1 custom-scrollbar">
-                        {analysisSets.map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => handleOpenAnalysisSet(item.id)}
-                            className={`w-full rounded-xl border px-3 py-3 text-left transition ${
-                              selectedAnalysisSetId === item.id &&
-                              isViewingSavedAnalysis
-                                ? "border-blue-200 bg-blue-50"
-                                : "border-slate-200 bg-white hover:bg-slate-50"
-                            }`}
-                          >
-                            <div className="text-[13px] font-bold text-slate-800">
-                              {item.name}
-                            </div>
-                            <div className="mt-1 text-[11px] text-slate-500">
-                              ID {item.id}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {isViewingSavedAnalysis && (
-                      <button
-                        type="button"
-                        onClick={handleBackToWorkspace}
-                        className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
-                      >
-                        현재 워크스페이스로 돌아가기
-                      </button>
-                    )}
                   </div>
                 </div>
               </PanelCard>
@@ -1152,7 +1158,7 @@ export default function SettlementAnalysisPage() {
 
             <main className="flex min-w-0 flex-1">
               <section className="flex min-w-0 flex-1 flex-col">
-                <div className="mb-4 flex shrink-0 items-start justify-between gap-4">
+                <div className="mb-3 flex shrink-0 items-start justify-between gap-4">
                   <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
                       Result View
@@ -1185,7 +1191,7 @@ export default function SettlementAnalysisPage() {
                   </div>
                 </div>
 
-                <div className="mb-4 grid shrink-0 grid-cols-4 gap-4">
+                <div className="mb-3 grid shrink-0 grid-cols-4 gap-3">
                   <KpiCard
                     label="발견된 이슈"
                     value={issues.length}
@@ -1212,7 +1218,7 @@ export default function SettlementAnalysisPage() {
                   />
                 </div>
 
-                <div className="min-h-0 flex-1 rounded-[32px] border border-slate-200 bg-white p-4 shadow-xl shadow-slate-200/60">
+                <div className="min-h-0 flex-1 rounded-[30px] border border-slate-200 bg-white p-4 shadow-xl shadow-slate-200/60">
                   <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] border border-slate-100 bg-slate-50/40">
                     <div className="shrink-0 border-b border-slate-100 px-5 py-4">
                       <p className="text-sm font-bold text-slate-700">
