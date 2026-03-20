@@ -171,6 +171,68 @@ function KpiCard({
   );
 }
 
+function SummaryActionCard({
+  title,
+  count,
+  description,
+  buttonLabel,
+  onClick,
+  tone = "slate",
+}: {
+  title: string;
+  count: number;
+  description: string;
+  buttonLabel: string;
+  onClick: () => void;
+  tone?: "blue" | "slate";
+}) {
+  const toneClass =
+    tone === "blue"
+      ? {
+          wrap: "border-blue-200 bg-blue-50/70",
+          badge: "bg-blue-100 text-blue-700",
+          button: "bg-blue-600 text-white hover:bg-blue-700",
+        }
+      : {
+          wrap: "border-slate-200 bg-slate-50/70",
+          badge: "bg-white text-slate-700 border border-slate-200",
+          button:
+            "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
+        };
+
+  return (
+    <div className={`rounded-[16px] border p-2 ${toneClass.wrap}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">
+            {title}
+          </p>
+
+          <div className="mt-1.5 flex items-center gap-2">
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${toneClass.badge}`}
+            >
+              {count}개
+            </span>
+          </div>
+
+          <p className="mt-1 text-[11px] leading-4 text-slate-500">
+            {description}
+          </p>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={onClick}
+        className={`mt-2 w-full rounded-lg px-3 py-1.5 text-[10px] font-bold transition ${toneClass.button}`}
+      >
+        {buttonLabel}
+      </button>
+    </div>
+  );
+}
+
 function FileTypeLabel(type: string) {
   switch (type) {
     case "DAILY":
@@ -208,8 +270,8 @@ function OptionBadge({ value }: { value: string }) {
     value === "YES"
       ? "bg-emerald-50 text-emerald-700 border-emerald-100"
       : value === "NO"
-        ? "bg-rose-50 text-rose-700 border-rose-100"
-        : "bg-slate-100 text-slate-600 border-slate-200";
+      ? "bg-rose-50 text-rose-700 border-rose-100"
+      : "bg-slate-100 text-slate-600 border-slate-200";
 
   return (
     <span
@@ -225,6 +287,57 @@ function CapabilityBadge({ label }: { label: string }) {
     <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold text-slate-600 shadow-sm">
       {label}
     </span>
+  );
+}
+
+function SettlementContextSummaryCard({
+  context,
+  onEdit,
+}: {
+  context: UpdateAnalysisContextRequest;
+  onEdit: () => void;
+}) {
+  const items = [
+    { label: "스토어 쿠폰", value: context.storeCouponUsage },
+    { label: "네이버 쿠폰", value: context.naverCouponUsage },
+    { label: "포인트 혜택", value: context.pointBenefitUsage },
+    { label: "안전반품 케어", value: context.safeReturnCareUsage },
+    { label: "비즈월렛 상계", value: context.bizWalletOffsetUsage },
+    { label: "빠른정산", value: context.fastSettlementUsage },
+    { label: "클레임 포함", value: context.claimIncluded },
+  ];
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="mb-3">
+        <p className="text-[12px] font-bold text-slate-700">현재 옵션 요약</p>
+        <p className="mt-1 text-[11px] text-slate-500">
+          분석에 반영될 옵션 상태입니다.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2">
+        {items.map((item) => (
+          <div
+            key={item.label}
+            className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3"
+          >
+            <span className="text-[12px] font-semibold text-slate-700">
+              {item.label}
+            </span>
+            <OptionBadge value={item.value} />
+          </div>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={onEdit}
+        className="mt-3 w-full rounded-lg bg-slate-950 px-2.5 py-1.5 text-[11px] font-bold text-white transition hover:bg-slate-800"
+      >
+        옵션 편집
+      </button>
+    </div>
   );
 }
 
@@ -350,6 +463,8 @@ export default function SettlementAnalysisPage() {
 
   const [activeTab, setActiveTab] = useState<TabKey>("OVERVIEW");
   const [isOptionEditorOpen, setIsOptionEditorOpen] = useState(false);
+  const [isWorkspaceFilesOpen, setIsWorkspaceFilesOpen] = useState(false);
+  const [isSavedListOpen, setIsSavedListOpen] = useState(false);
 
   const [pageLoading, setPageLoading] = useState(false);
   const [contextSaving, setContextSaving] = useState(false);
@@ -368,19 +483,6 @@ export default function SettlementAnalysisPage() {
     !isViewingSavedAnalysis;
 
   const normalizedContext = useMemo(() => normalizeContext(context), [context]);
-
-  const optionSummary = useMemo(
-    () => [
-      { label: "스토어 쿠폰", value: normalizedContext.storeCouponUsage },
-      { label: "네이버 쿠폰", value: normalizedContext.naverCouponUsage },
-      { label: "포인트 혜택", value: normalizedContext.pointBenefitUsage },
-      { label: "안전반품 케어", value: normalizedContext.safeReturnCareUsage },
-      { label: "비즈월렛 상계", value: normalizedContext.bizWalletOffsetUsage },
-      { label: "빠른정산", value: normalizedContext.fastSettlementUsage },
-      { label: "클레임 포함", value: normalizedContext.claimIncluded },
-    ],
-    [normalizedContext]
-  );
 
   async function loadWorkspaceResultData(
     workspaceKey: string,
@@ -463,6 +565,7 @@ export default function SettlementAnalysisPage() {
 
       setSelectedAnalysisSetId(analysisSetId);
       setIsViewingSavedAnalysis(true);
+      setIsSavedListOpen(false);
 
       setCapability(capabilityRes);
       setContext(null);
@@ -483,6 +586,7 @@ export default function SettlementAnalysisPage() {
   async function handleBackToWorkspace() {
     setIsViewingSavedAnalysis(false);
     setSelectedAnalysisSetId(null);
+    setIsSavedListOpen(false);
     await refreshWorkspace();
   }
 
@@ -750,6 +854,9 @@ export default function SettlementAnalysisPage() {
       setAnalysisSets([]);
       setSelectedAnalysisSetId(null);
       setIsViewingSavedAnalysis(false);
+      setIsOptionEditorOpen(false);
+      setIsWorkspaceFilesOpen(false);
+      setIsSavedListOpen(false);
     }
   }
 
@@ -767,6 +874,8 @@ export default function SettlementAnalysisPage() {
     setFeeRows([]);
     setSelectedAnalysisSetId(null);
     setIsViewingSavedAnalysis(false);
+    setIsWorkspaceFilesOpen(false);
+    setIsSavedListOpen(false);
     await initializeWorkspace(true);
   }
 
@@ -962,15 +1071,17 @@ export default function SettlementAnalysisPage() {
           <div className="flex h-full min-h-0 flex-col gap-4 xl:flex-row">
             <aside className="flex min-h-0 w-full shrink-0 flex-col xl:h-full xl:w-[400px] 2xl:w-[430px]">
               <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
-                <div className="min-h-0 flex-1 p-3 sm:p-4">
-                  <div className="flex h-full min-h-0 flex-col gap-3">
-                    <div className="grid shrink-0 grid-cols-1 gap-3 2xl:grid-cols-[1.02fr_0.98fr]">
-                      <div className="min-w-0">
-                        <p className="mb-2 text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
-                          파일 업로드
-                        </p>
+                <div className="min-h-0 flex-1 overflow-y-auto p-3 custom-scrollbar sm:p-4">
+                  <div className="flex min-h-full flex-col gap-3">
+                    <div className="grid grid-cols-[1.05fr_1.1fr] gap-3">
+                      <section className="rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm">
+                        <div className="mb-3">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">
+                            파일 업로드
+                          </p>
+                        </div>
 
-                        <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-3">
+                        <div className="min-h-[420px]">
                           <SettlementUploadSection
                             disabled={
                               !isActiveWorkspace || isViewingSavedAnalysis
@@ -978,147 +1089,47 @@ export default function SettlementAnalysisPage() {
                             onUpload={handleUploadFile}
                           />
                         </div>
-                      </div>
+                      </section>
 
-                      <div className="min-w-0">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
+                      <section className="rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm">
+                        <div className="mb-3">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">
                             분석 옵션 설정
                           </p>
-
-                          <button
-                            type="button"
-                            onClick={() => setIsOptionEditorOpen(true)}
-                            disabled={isViewingSavedAnalysis}
-                            className="rounded-lg bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-slate-700 disabled:opacity-40"
-                          >
-                            옵션 편집
-                          </button>
                         </div>
 
-                        <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-3">
-                          <div className="grid grid-cols-1 gap-2">
-                            {optionSummary.map((item) => (
-                              <div
-                                key={item.label}
-                                className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2"
-                              >
-                                <span className="text-[12px] font-semibold text-slate-600">
-                                  {item.label}
-                                </span>
-                                <OptionBadge value={item.value} />
-                              </div>
-                            ))}
-                          </div>
-
-                          <div className="mt-3 flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setIsOptionEditorOpen(true)}
-                              disabled={isViewingSavedAnalysis}
-                              className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                            >
-                              옵션 편집
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleSaveContext}
-                              disabled={
-                                contextSaving || isViewingSavedAnalysis
-                              }
-                              className="flex-1 rounded-xl bg-blue-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-blue-700 disabled:opacity-50"
-                            >
-                              {contextSaving ? "적용 중" : "옵션 적용"}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-1 xl:grid-rows-[1fr_1fr]">
-                      <div className="min-h-0 rounded-[22px] border border-slate-200 bg-slate-50/60 p-3">
-                        <div className="mb-2 flex items-center justify-between">
-                          <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
-                            업로드된 파일 목록
-                          </p>
-                          <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-slate-500">
-                            {workspaceFiles.length}개
-                          </span>
-                        </div>
-
-                        <div className="h-[calc(100%-28px)] overflow-y-auto pr-1 custom-scrollbar">
-                          <UploadedFileListCard
-                            items={workspaceFiles}
-                            removing={removingFile || isViewingSavedAnalysis}
-                            onRemove={handleRemoveFile}
+                        <div className="min-h-[420px]">
+                          <SettlementContextSummaryCard
+                            context={normalizedContext}
+                            onEdit={() => setIsOptionEditorOpen(true)}
                           />
                         </div>
-                      </div>
+                      </section>
+                    </div>
 
-                      <div className="min-h-0 rounded-[22px] border border-slate-200 bg-slate-50/60 p-3">
-                        <div className="mb-2 flex items-center justify-between">
-                          <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
-                            저장본 목록
-                          </p>
-                          <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-slate-500">
-                            {analysisSets.length}개
-                          </span>
-                        </div>
+                    <div className="grid shrink-0 grid-cols-1 gap-3">
+                      <SummaryActionCard
+                        title="연결된 파일"
+                        count={workspaceFiles.length}
+                        description="연결된 파일을 확인하고 제거할 수 있습니다."
+                        buttonLabel="목록 보기"
+                        onClick={() => setIsWorkspaceFilesOpen(true)}
+                        tone="blue"
+                      />
 
-                        <div className="h-[calc(100%-28px)] overflow-y-auto pr-1 custom-scrollbar">
-                          {!isAuthenticated ? (
-                            <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-center text-[12px] text-slate-500">
-                              로그인 후 저장본을 확인할 수 있습니다.
-                            </div>
-                          ) : analysisSetsLoading ? (
-                            <div className="rounded-xl border border-slate-200 bg-white px-3 py-4 text-center text-[12px] text-slate-500">
-                              저장본 불러오는 중...
-                            </div>
-                          ) : analysisSets.length === 0 ? (
-                            <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-center text-[12px] text-slate-500">
-                              저장된 분석이 없습니다.
-                            </div>
-                          ) : (
-                            <div className="space-y-2">
-                              {analysisSets.map((item) => (
-                                <button
-                                  key={item.id}
-                                  type="button"
-                                  onClick={() => handleOpenAnalysisSet(item.id)}
-                                  className={`w-full rounded-xl border px-3 py-2.5 text-left transition ${
-                                    selectedAnalysisSetId === item.id &&
-                                    isViewingSavedAnalysis
-                                      ? "border-blue-200 bg-blue-50"
-                                      : "border-slate-200 bg-white hover:bg-slate-50"
-                                  }`}
-                                >
-                                  <div className="truncate text-[13px] font-bold text-slate-800">
-                                    {item.name}
-                                  </div>
-                                  <div className="mt-1 text-[11px] text-slate-500">
-                                    ID {item.id}
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        {isViewingSavedAnalysis && (
-                          <button
-                            type="button"
-                            onClick={handleBackToWorkspace}
-                            className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
-                          >
-                            현재 워크스페이스로 돌아가기
-                          </button>
-                        )}
-                      </div>
+                      <SummaryActionCard
+                        title="저장된 분석"
+                        count={analysisSets.length}
+                        description="저장한 분석을 열고 복원할 수 있습니다."
+                        buttonLabel="목록 보기"
+                        onClick={() => setIsSavedListOpen(true)}
+                        tone="slate"
+                      />
                     </div>
                   </div>
                 </div>
 
-                <div className="shrink-0 border-t border-slate-100 px-3 py-3 sm:px-4">
+                <div className="shrink-0 border-t border-slate-100 bg-white px-3 py-3 sm:px-4">
                   <button
                     type="button"
                     onClick={handleSaveWorkspace}
@@ -1273,6 +1284,131 @@ export default function SettlementAnalysisPage() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {isWorkspaceFilesOpen && (
+          <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/30 backdrop-blur-[1px]">
+            <div className="flex h-full w-full max-w-[92vw] flex-col border-l border-slate-200 bg-white shadow-2xl sm:w-[560px]">
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4 sm:px-6 sm:py-5">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
+                    Connected Files
+                  </p>
+                  <h3 className="mt-1 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
+                    연결된 파일
+                  </h3>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsWorkspaceFilesOpen(false)}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50"
+                >
+                  닫기
+                </button>
+              </div>
+
+              <div className="shrink-0 border-b border-slate-100 px-4 py-3 sm:px-6">
+                <div className="rounded-xl bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
+                  현재 워크스페이스에 연결된 파일은{" "}
+                  <span className="font-bold">{workspaceFiles.length}개</span>
+                  입니다.
+                </div>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 custom-scrollbar">
+                <UploadedFileListCard
+                  items={workspaceFiles}
+                  removing={removingFile || isViewingSavedAnalysis}
+                  onRemove={handleRemoveFile}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isSavedListOpen && (
+          <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/30 backdrop-blur-[1px]">
+            <div className="flex h-full w-full max-w-[92vw] flex-col border-l border-slate-200 bg-white shadow-2xl sm:w-[560px]">
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4 sm:px-6 sm:py-5">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
+                    Saved Analyses
+                  </p>
+                  <h3 className="mt-1 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
+                    저장된 분석
+                  </h3>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsSavedListOpen(false)}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50"
+                >
+                  닫기
+                </button>
+              </div>
+
+              <div className="shrink-0 border-b border-slate-100 px-4 py-3 sm:px-6">
+                <div className="rounded-xl bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
+                  저장된 분석은{" "}
+                  <span className="font-bold">{analysisSets.length}개</span>
+                  입니다.
+                </div>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 custom-scrollbar">
+                {!isAuthenticated ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-center text-[13px] text-slate-500">
+                    로그인 후 저장본을 확인할 수 있습니다.
+                  </div>
+                ) : analysisSetsLoading ? (
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-5 text-center text-[13px] text-slate-500">
+                    저장본 불러오는 중...
+                  </div>
+                ) : analysisSets.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-center text-[13px] text-slate-500">
+                    저장된 분석이 없습니다.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {analysisSets.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleOpenAnalysisSet(item.id)}
+                        className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                          selectedAnalysisSetId === item.id &&
+                          isViewingSavedAnalysis
+                            ? "border-blue-200 bg-blue-50"
+                            : "border-slate-200 bg-white hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="truncate text-[14px] font-bold text-slate-800">
+                          {item.name}
+                        </div>
+                        <div className="mt-1 text-[12px] text-slate-500">
+                          ID {item.id}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {isViewingSavedAnalysis && (
+                <div className="shrink-0 border-t border-slate-100 px-4 py-4 sm:px-6">
+                  <button
+                    type="button"
+                    onClick={handleBackToWorkspace}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                  >
+                    현재 워크스페이스로 돌아가기
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

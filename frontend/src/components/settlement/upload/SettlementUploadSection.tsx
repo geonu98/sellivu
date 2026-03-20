@@ -60,68 +60,66 @@ export default function SettlementUploadSection({
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
-      <div className="space-y-3">
-        {FILE_TYPES.map((fileType) => {
-          const dragActive = dragActiveType === fileType;
-          const loading = loadingType === fileType;
+    <div className="flex h-full flex-col gap-4">
+      {FILE_TYPES.map((fileType) => {
+        const dragActive = dragActiveType === fileType;
+        const loading = loadingType === fileType;
 
-          return (
-            <div
-              key={fileType}
-              onDragOver={(e) => {
-                e.preventDefault();
-                if (!disabled && !loadingType) {
-                  setDragActiveType(fileType);
-                }
+        return (
+          <div
+            key={fileType}
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (!disabled && !loadingType) {
+                setDragActiveType(fileType);
+              }
+            }}
+            onDragLeave={() => setDragActiveType(null)}
+            onDrop={(e) => void handleDrop(e, fileType)}
+            onClick={() => {
+              if (!disabled && !loadingType) {
+                inputRefs.current[fileType]?.click();
+              }
+            }}
+            className={`flex min-h-[110px] flex-1 cursor-pointer items-center rounded-2xl border border-dashed px-4 py-4 transition ${
+              dragActive
+                ? "border-blue-500 bg-blue-50"
+                : "border-slate-300 bg-white hover:border-slate-400 hover:bg-slate-50"
+            } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
+          >
+            <input
+              ref={(el) => {
+                inputRefs.current[fileType] = el;
               }}
-              onDragLeave={() => setDragActiveType(null)}
-              onDrop={(e) => void handleDrop(e, fileType)}
-              onClick={() => {
-                if (!disabled && !loadingType) {
-                  inputRefs.current[fileType]?.click();
-                }
-              }}
-              className={`cursor-pointer rounded-2xl border border-dashed px-4 py-4 transition ${
-                dragActive
-                  ? "border-blue-500 bg-blue-50"
-                  : "border-slate-300 bg-slate-50 hover:border-slate-400 hover:bg-slate-100"
-              } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
-            >
-              <input
-                ref={(el) => {
-                  inputRefs.current[fileType] = el;
-                }}
-                type="file"
-                className="hidden"
-                disabled={disabled || loadingType !== null}
-                onChange={(e) => void handleChange(e, fileType)}
-              />
+              type="file"
+              className="hidden"
+              disabled={disabled || loadingType !== null}
+              onChange={(e) => void handleChange(e, fileType)}
+            />
 
-              <div className="flex items-center gap-3.5">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-xl font-bold text-slate-700 shadow-sm">
-                  +
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-bold text-slate-800">
-                    {FILE_TYPE_LABEL[fileType]}
-                  </div>
-                  <div className="mt-1 text-[11px] leading-4 text-slate-500">
-                    클릭/드래그해서 파일 추가
-                  </div>
-                </div>
-
-                {loading && (
-                  <div className="shrink-0 rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-bold text-blue-700">
-                    업로드 중
-                  </div>
-                )}
+            <div className="flex w-full items-center gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-slate-50 text-2xl font-bold text-slate-700 shadow-sm">
+                +
               </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="text-[15px] font-bold text-slate-800">
+                  {FILE_TYPE_LABEL[fileType]}
+                </div>
+                <div className="mt-1 text-[12px] leading-5 text-slate-500">
+                  클릭/드래그해서 업로드
+                </div>
+              </div>
+
+              {loading && (
+                <div className="shrink-0 rounded-full bg-blue-100 px-3 py-1.5 text-[11px] font-bold text-blue-700">
+                  업로드 중
+                </div>
+              )}
             </div>
-          );
-        })}
-      </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
