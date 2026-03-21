@@ -9,6 +9,7 @@ import type {
   MonthlyRow,
   OrderRow,
   FeeRow,
+  AnalysisContextResponse,
 } from "../types/settlementAnalysis";
 
 export async function fetchAnalysisSets() {
@@ -79,4 +80,15 @@ export async function fetchAnalysisSetFeeRows(analysisSetId: number) {
     `/api/settlement/analysis-sets/my/${analysisSetId}/fees`
   );
   return data;
+}
+
+export async function fetchAnalysisSetContext(analysisSetId: number) {
+  const { data } = await http.get<AnalysisContextResponse>(
+    `/api/settlement/analysis-sets/my/${analysisSetId}/context`
+  );
+  return data;
+}
+
+export async function restoreAnalysisSetToWorkspace(analysisSetId: number) {
+  await http.post(`/api/settlement/analysis-sets/my/${analysisSetId}/restore`);
 }

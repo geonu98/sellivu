@@ -15,13 +15,7 @@ import {
 } from "../../api/settlementWorkspaceApi";
 import {
   fetchAnalysisSets,
-  fetchAnalysisSetCapability,
-  fetchAnalysisSetDailyRows,
-  fetchAnalysisSetFeeRows,
-  fetchAnalysisSetIssues,
-  fetchAnalysisSetMonthlyRows,
-  fetchAnalysisSetOrderRows,
-  fetchAnalysisSetSnapshots,
+  restoreAnalysisSetToWorkspace,
 } from "../../api/settlementAnalysisSetApi";
 import { authApi } from "../../api/authApi";
 import SettlementUploadSection from "../../components/settlement/upload/SettlementUploadSection";
@@ -473,6 +467,17 @@ export default function SettlementAnalysisPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [skipAutoInitOnce, setSkipAutoInitOnce] = useState(false);
 
+  const [isRestoreConfirmOpen, setIsRestoreConfirmOpen] = useState(false);
+  const [pendingRestoreAnalysisSetId, setPendingRestoreAnalysisSetId] =
+    useState<number | null>(null);
+  const [restoreAfterSaveLoading, setRestoreAfterSaveLoading] = useState(false);
+  const [restoreWithoutSaveLoading, setRestoreWithoutSaveLoading] =
+    useState(false);
+
+  // 추가: 현재 작업이 저장되지 않은 상태인지 추적
+  const [hasUnsavedWorkspaceChanges, setHasUnsavedWorkspaceChanges] =
+    useState(false);
+
   const workspaceFiles = (workspace?.files ?? []).filter((file) => file.active);
   const isActiveWorkspace = workspace?.status === "ACTIVE";
   const hasConnectedFiles = workspaceFiles.length > 0;
@@ -540,197 +545,145 @@ export default function SettlementAnalysisPage() {
     }
   }
 
-  async function handleOpenAnalysisSet(analysisSetId: number) {
-    setPageLoading(true);
-    setErrorMessage(null);
+async function initializeWorkspace(forceCreate = false): Promise<WorkspaceSession> {
+  setPageLoading(true);
+  setErrorMessage(null);
 
-    try {
-      const [
-        capabilityRes,
-        issuesRes,
-        snapshotsRes,
-        dailyRes,
-        monthlyRes,
-        orderRes,
-        feeRes,
-      ] = await Promise.all([
-        fetchAnalysisSetCapability(analysisSetId),
-        fetchAnalysisSetIssues(analysisSetId),
-        fetchAnalysisSetSnapshots(analysisSetId),
-        fetchAnalysisSetDailyRows(analysisSetId),
-        fetchAnalysisSetMonthlyRows(analysisSetId),
-        fetchAnalysisSetOrderRows(analysisSetId),
-        fetchAnalysisSetFeeRows(analysisSetId),
-      ]);
+  try {
+    const savedSession = loadWorkspaceSession();
 
-      setSelectedAnalysisSetId(analysisSetId);
-      setIsViewingSavedAnalysis(true);
-      setIsSavedListOpen(false);
+    const candidateSession = forceCreate
+      ? null
+      : workspaceSession || (isAuthenticated ? savedSession : null);
 
-      setCapability(capabilityRes);
-      setContext(null);
+    if (candidateSession) {
+      const workspaceRes = await fetchWorkspace(
+        candidateSession.workspaceKey,
+        candidateSession.workspaceToken
+      );
 
-      setIssues(issuesRes);
-      setSnapshots(snapshotsRes);
-      setDailyRows(dailyRes);
-      setMonthlyRows(monthlyRes);
-      setOrderRows(orderRes);
-      setFeeRows(feeRes);
-    } catch (error) {
-      setErrorMessage(getApiErrorMessage(error));
-    } finally {
-      setPageLoading(false);
-    }
-  }
+      const shouldDropEmptyGuestAfterLogin =
+        isAuthenticated &&
+        workspaceRes.ownerType === "GUEST" &&
+        (workspaceRes.files?.length ?? 0) === 0 &&
+        workspaceRes.savedAnalysisSetId == null;
 
-  async function handleBackToWorkspace() {
-    setIsViewingSavedAnalysis(false);
-    setSelectedAnalysisSetId(null);
-    setIsSavedListOpen(false);
-    await refreshWorkspace();
-  }
+      if (!shouldDropEmptyGuestAfterLogin) {
+        const nextSession: WorkspaceSession = {
+          ...candidateSession,
+          savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
+        };
 
-  async function initializeWorkspace(forceCreate = false) {
-    setPageLoading(true);
-    setErrorMessage(null);
+        setWorkspaceSession(nextSession);
+        if (isAuthenticated) saveWorkspaceSession(nextSession);
 
-    try {
-      const savedSession = loadWorkspaceSession();
+        setWorkspace(workspaceRes);
+        setContext(workspaceRes.context ?? null);
+        setCapability(workspaceRes.capability ?? null);
 
-      const candidateSession = forceCreate
-        ? null
-        : workspaceSession || (isAuthenticated ? savedSession : null);
-
-      if (candidateSession) {
-        const workspaceRes = await fetchWorkspace(
-          candidateSession.workspaceKey,
-          candidateSession.workspaceToken
+        await loadWorkspaceResultData(
+          nextSession.workspaceKey,
+          nextSession.workspaceToken,
+          workspaceRes.capability
         );
 
-        const shouldDropEmptyGuestAfterLogin =
-          isAuthenticated &&
-          workspaceRes.ownerType === "GUEST" &&
-          (workspaceRes.files?.length ?? 0) === 0 &&
-          workspaceRes.savedAnalysisSetId == null;
-
-        if (!shouldDropEmptyGuestAfterLogin) {
-          const nextSession: WorkspaceSession = {
-            ...candidateSession,
-            savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
-          };
-
-          setWorkspaceSession(nextSession);
-
-          if (isAuthenticated) {
-            saveWorkspaceSession(nextSession);
-          }
-
-          setWorkspace(workspaceRes);
-          setContext(workspaceRes.context ?? null);
-          setCapability(workspaceRes.capability ?? null);
-
-          await loadWorkspaceResultData(
-            nextSession.workspaceKey,
-            nextSession.workspaceToken,
-            workspaceRes.capability
-          );
-          return;
-        }
-
-        clearWorkspaceSession();
-        setWorkspaceSession(null);
+        setHasUnsavedWorkspaceChanges(false);
+        return nextSession;
       }
 
       clearWorkspaceSession();
       setWorkspaceSession(null);
-
-      const created = await createWorkspace();
-
-      if (!created.workspaceToken) {
-        throw new Error("workspaceToken 이 응답에 없습니다.");
-      }
-
-      const session: WorkspaceSession = {
-        workspaceKey: created.workspaceKey,
-        workspaceToken: created.workspaceToken,
-        savedAnalysisSetId: null,
-      };
-
-      setWorkspaceSession(session);
-
-      const workspaceRes = await fetchWorkspace(
-        session.workspaceKey,
-        session.workspaceToken
-      );
-
-      const nextSession: WorkspaceSession = {
-        ...session,
-        savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
-      };
-
-      setWorkspaceSession(nextSession);
-
-      if (isAuthenticated) {
-        saveWorkspaceSession(nextSession);
-      }
-
-      setWorkspace(workspaceRes);
-      setContext(workspaceRes.context ?? null);
-      setCapability(workspaceRes.capability ?? null);
-
-      await loadWorkspaceResultData(
-        nextSession.workspaceKey,
-        nextSession.workspaceToken,
-        workspaceRes.capability
-      );
-    } catch (error) {
-      clearWorkspaceSession();
-      setWorkspaceSession(null);
-      setWorkspace(null);
-      setCapability(null);
-      setContext(null);
-      setIssues([]);
-      setSnapshots([]);
-      setDailyRows([]);
-      setMonthlyRows([]);
-      setOrderRows([]);
-      setFeeRows([]);
-      setErrorMessage(getApiErrorMessage(error));
-    } finally {
-      setPageLoading(false);
     }
-  }
 
-  async function refreshWorkspace() {
-    if (!workspaceSession) return;
+    clearWorkspaceSession();
+    setWorkspaceSession(null);
+
+    const created = await createWorkspace();
+
+    if (!created.workspaceToken) {
+      throw new Error("workspaceToken 이 응답에 없습니다.");
+    }
+
+    const session: WorkspaceSession = {
+      workspaceKey: created.workspaceKey,
+      workspaceToken: created.workspaceToken,
+      savedAnalysisSetId: null,
+    };
 
     const workspaceRes = await fetchWorkspace(
-      workspaceSession.workspaceKey,
-      workspaceSession.workspaceToken
+      session.workspaceKey,
+      session.workspaceToken
     );
+
+    const nextSession: WorkspaceSession = {
+      ...session,
+      savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
+    };
+
+    setWorkspaceSession(nextSession);
+    if (isAuthenticated) saveWorkspaceSession(nextSession);
 
     setWorkspace(workspaceRes);
     setContext(workspaceRes.context ?? null);
     setCapability(workspaceRes.capability ?? null);
 
-    const nextSession: WorkspaceSession = {
-      ...workspaceSession,
-      savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
-    };
-
-    setWorkspaceSession(nextSession);
-
-    if (isAuthenticated) {
-      saveWorkspaceSession(nextSession);
-    }
-
     await loadWorkspaceResultData(
-      workspaceSession.workspaceKey,
-      workspaceSession.workspaceToken,
+      nextSession.workspaceKey,
+      nextSession.workspaceToken,
       workspaceRes.capability
     );
+
+    setHasUnsavedWorkspaceChanges(false);
+    return nextSession;
+  } catch (error) {
+    clearWorkspaceSession();
+    setWorkspaceSession(null);
+    setWorkspace(null);
+    setCapability(null);
+    setContext(null);
+    setIssues([]);
+    setSnapshots([]);
+    setDailyRows([]);
+    setMonthlyRows([]);
+    setOrderRows([]);
+    setFeeRows([]);
+    setErrorMessage(getApiErrorMessage(error));
+    throw error;
+  } finally {
+    setPageLoading(false);
+  }
+}
+
+  async function refreshWorkspace(sessionArg?: WorkspaceSession) {
+  const session = sessionArg ?? workspaceSession;
+  if (!session) return;
+
+  const workspaceRes = await fetchWorkspace(
+    session.workspaceKey,
+    session.workspaceToken
+  );
+
+  setWorkspace(workspaceRes);
+  setContext(workspaceRes.context ?? null);
+  setCapability(workspaceRes.capability ?? null);
+
+  const nextSession: WorkspaceSession = {
+    ...session,
+    savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
+  };
+
+  setWorkspaceSession(nextSession);
+
+  if (isAuthenticated) {
+    saveWorkspaceSession(nextSession);
   }
 
+  await loadWorkspaceResultData(
+    nextSession.workspaceKey,
+    nextSession.workspaceToken,
+    workspaceRes.capability
+  );
+}
   async function handleUploadFile(file: File, fileType: SettlementFileType) {
     if (!workspaceSession || isViewingSavedAnalysis) return;
 
@@ -744,6 +697,7 @@ export default function SettlementAnalysisPage() {
         fileType
       );
       await refreshWorkspace();
+      setHasUnsavedWorkspaceChanges(true);
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error));
     }
@@ -762,6 +716,7 @@ export default function SettlementAnalysisPage() {
         workspaceFileId
       );
       await refreshWorkspace();
+      setHasUnsavedWorkspaceChanges(true);
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error));
     } finally {
@@ -784,7 +739,6 @@ export default function SettlementAnalysisPage() {
 
     try {
       const payload = normalizedContext;
-
       const updated = await updateWorkspaceContext(
         workspaceSession.workspaceKey,
         workspaceSession.workspaceToken,
@@ -800,6 +754,7 @@ export default function SettlementAnalysisPage() {
       );
 
       setIsOptionEditorOpen(false);
+      setHasUnsavedWorkspaceChanges(true);
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error));
     } finally {
@@ -825,11 +780,113 @@ export default function SettlementAnalysisPage() {
       );
       await refreshWorkspace();
       await refreshAnalysisSets();
+      setHasUnsavedWorkspaceChanges(false);
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error));
     } finally {
       setSaveLoading(false);
     }
+  }
+
+ // saved analysis를 workspace에 복원한 직후 상태는 "저장된 내용을 펼쳐놓은 작업본"으로 간주한다.
+// 따라서 사용자가 추가 수정하기 전까지는 unsaved change가 없는 상태(false)다.
+async function performRestoreAnalysisSet(
+  analysisSetId: number,
+  sessionArg?: WorkspaceSession
+) {
+  await restoreAnalysisSetToWorkspace(analysisSetId);
+  setSelectedAnalysisSetId(analysisSetId);
+  setIsViewingSavedAnalysis(false);
+  setIsSavedListOpen(false);
+  await refreshWorkspace(sessionArg);
+  setHasUnsavedWorkspaceChanges(false);
+}
+
+  async function handleOpenAnalysisSet(analysisSetId: number) {
+    setErrorMessage(null);
+
+    // 수정: ACTIVE/SAVED 여부가 아니라 미저장 변경 여부로 모달 판단
+    if (hasUnsavedWorkspaceChanges) {
+      setPendingRestoreAnalysisSetId(analysisSetId);
+      setIsRestoreConfirmOpen(true);
+      return;
+    }
+
+    setPageLoading(true);
+    try {
+      await performRestoreAnalysisSet(analysisSetId);
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error));
+    } finally {
+      setPageLoading(false);
+    }
+  }
+
+async function handleConfirmSaveAndRestore() {
+  if (!pendingRestoreAnalysisSetId) return;
+
+  if (!isAuthenticated) {
+    openAuthModal();
+    return;
+  }
+
+  if (!workspaceSession) {
+    setErrorMessage("현재 워크스페이스가 없습니다.");
+    return;
+  }
+
+  setRestoreAfterSaveLoading(true);
+  setErrorMessage(null);
+
+  try {
+    await saveWorkspace(
+      workspaceSession.workspaceKey,
+      workspaceSession.workspaceToken
+    );
+
+    await refreshAnalysisSets();
+
+    const newSession = await initializeWorkspace(true);
+    await performRestoreAnalysisSet(pendingRestoreAnalysisSetId, newSession);
+
+    setIsRestoreConfirmOpen(false);
+    setPendingRestoreAnalysisSetId(null);
+    setHasUnsavedWorkspaceChanges(false);
+  } catch (error) {
+    setErrorMessage(getApiErrorMessage(error));
+  } finally {
+    setRestoreAfterSaveLoading(false);
+  }
+}
+
+  async function handleConfirmRestoreWithoutSave() {
+    if (!pendingRestoreAnalysisSetId) return;
+
+    setRestoreWithoutSaveLoading(true);
+    setErrorMessage(null);
+
+    try {
+      await performRestoreAnalysisSet(pendingRestoreAnalysisSetId);
+
+      setIsRestoreConfirmOpen(false);
+      setPendingRestoreAnalysisSetId(null);
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error));
+    } finally {
+      setRestoreWithoutSaveLoading(false);
+    }
+  }
+
+  function handleCancelRestore() {
+    setIsRestoreConfirmOpen(false);
+    setPendingRestoreAnalysisSetId(null);
+  }
+
+  async function handleBackToWorkspace() {
+    setIsViewingSavedAnalysis(false);
+    setSelectedAnalysisSetId(null);
+    setIsSavedListOpen(false);
+    await refreshWorkspace();
   }
 
   async function handleLogout() {
@@ -857,6 +914,9 @@ export default function SettlementAnalysisPage() {
       setIsOptionEditorOpen(false);
       setIsWorkspaceFilesOpen(false);
       setIsSavedListOpen(false);
+      setIsRestoreConfirmOpen(false);
+      setPendingRestoreAnalysisSetId(null);
+      setHasUnsavedWorkspaceChanges(false);
     }
   }
 
@@ -876,6 +936,9 @@ export default function SettlementAnalysisPage() {
     setIsViewingSavedAnalysis(false);
     setIsWorkspaceFilesOpen(false);
     setIsSavedListOpen(false);
+    setIsRestoreConfirmOpen(false);
+    setPendingRestoreAnalysisSetId(null);
+    setHasUnsavedWorkspaceChanges(false);
     await initializeWorkspace(true);
   }
 
@@ -995,6 +1058,24 @@ export default function SettlementAnalysisPage() {
       />
     );
   }
+   const basedAnalysisSetId =
+    workspaceSession?.savedAnalysisSetId ?? selectedAnalysisSetId ?? null;
+
+  const basedAnalysisSet = basedAnalysisSetId
+    ? analysisSets.find((item) => item.id === basedAnalysisSetId)
+    : null;
+
+  const currentWorkspaceLabel = basedAnalysisSet
+    ? `${basedAnalysisSet.id}번 저장본 기반`
+    : "새 작업공간";
+
+  const currentWorkspaceStatusLabel = hasUnsavedWorkspaceChanges
+    ? "변경사항 있음"
+    : "변경사항 없음";
+
+  const currentWorkspaceStatusTone = hasUnsavedWorkspaceChanges
+    ? "bg-amber-50 text-amber-700 border-amber-200"
+    : "bg-emerald-50 text-emerald-700 border-emerald-200";
 
   const capabilityViews = capability?.availableViews ?? [];
 
@@ -1129,7 +1210,31 @@ export default function SettlementAnalysisPage() {
                   </div>
                 </div>
 
-                <div className="shrink-0 border-t border-slate-100 bg-white px-3 py-3 sm:px-4">
+                             <div className="shrink-0 border-t border-slate-100 bg-white px-3 py-3 sm:px-4">
+                  <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                      Current Workspace
+                    </p>
+
+                    <p className="mt-2 text-sm font-bold text-slate-800">
+                      현재 작업공간: {currentWorkspaceLabel}
+                    </p>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${currentWorkspaceStatusTone}`}
+                      >
+                        {currentWorkspaceStatusLabel}
+                      </span>
+
+                      {basedAnalysisSet?.name && (
+                        <span className="text-[11px] font-medium text-slate-500">
+                          {basedAnalysisSet.name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
                   <button
                     type="button"
                     onClick={handleSaveWorkspace}
@@ -1277,7 +1382,9 @@ export default function SettlementAnalysisPage() {
                   <button
                     type="button"
                     onClick={handleSaveContext}
-                    disabled={contextSaving || isViewingSavedAnalysis}
+                    disabled={
+                      contextSaving || isViewingSavedAnalysis || !workspaceSession
+                    }
                     className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
                   >
                     {contextSaving ? "적용 중" : "옵션 적용"}
@@ -1409,6 +1516,59 @@ export default function SettlementAnalysisPage() {
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {isRestoreConfirmOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 px-4 backdrop-blur-[1px]">
+            <div className="w-full max-w-md rounded-[24px] border border-slate-200 bg-white p-5 shadow-2xl">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
+                Restore Confirmation
+              </p>
+
+              <h3 className="mt-2 text-xl font-black tracking-tight text-slate-900">
+                저장본을 불러오시겠습니까?
+              </h3>
+
+              <p className="mt-3 text-sm leading-6 text-slate-600">
+                현재 작업 중인 파일과 옵션은 선택한 저장본 내용으로
+                교체됩니다. 계속하려면 현재 작업을 저장하거나, 저장하지 않고
+                바로 불러오세요.
+              </p>
+
+              <div className="mt-5 flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmSaveAndRestore}
+                  disabled={restoreAfterSaveLoading || restoreWithoutSaveLoading}
+                  className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {restoreAfterSaveLoading
+                    ? "저장 후 불러오는 중..."
+                    : "저장 후 불러오기"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleConfirmRestoreWithoutSave}
+                  disabled={restoreAfterSaveLoading || restoreWithoutSaveLoading}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {restoreWithoutSaveLoading
+                    ? "불러오는 중..."
+                    : "저장하지 않고 불러오기"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCancelRestore}
+                  disabled={restoreAfterSaveLoading || restoreWithoutSaveLoading}
+                  className="w-full rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-200 disabled:opacity-50"
+                >
+                  취소
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -1,6 +1,7 @@
 package com.sellivu.backend.settlement.repository;
 
 import com.sellivu.backend.settlement.domain.SettlementWorkspace;
+import com.sellivu.backend.settlement.domain.WorkspaceOwnerType;
 import com.sellivu.backend.settlement.domain.WorkspaceStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -15,5 +16,12 @@ public interface SettlementWorkspaceRepository extends JpaRepository<SettlementW
     List<SettlementWorkspace> findAllByStatusAndExpiresAtBefore(
             WorkspaceStatus status,
             LocalDateTime expiresAt
+    );
+
+    // 추가: 현재 로그인 유저의 ACTIVE workspace 조회
+    Optional<SettlementWorkspace> findFirstByOwnerTypeAndUserIdAndStatusOrderByIdDesc(
+            WorkspaceOwnerType ownerType,
+            Long userId,
+            WorkspaceStatus status
     );
 }

@@ -26,14 +26,20 @@ export default function SettlementUploadSection({
     FEE_DETAIL: null,
   });
 
-  async function handleFile(file: File, fileType: SettlementFileType) {
-    setLoadingType(fileType);
-    try {
-      await onUpload(file, fileType);
-    } finally {
-      setLoadingType(null);
-    }
+ 
+async function handleFile(file: File, fileType: SettlementFileType) {
+  console.log("handleFile start", { fileName: file.name, fileType });
+  setLoadingType(fileType);
+  try {
+    await onUpload(file, fileType);
+    console.log("handleFile success");
+  } catch (error) {
+    console.error("handleFile error", error);
+  } finally {
+    setLoadingType(null);
   }
+}
+
 
   async function handleChange(
     e: React.ChangeEvent<HTMLInputElement>,

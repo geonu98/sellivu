@@ -1,9 +1,6 @@
 package com.sellivu.backend.settlement.controller;
 
-import com.sellivu.backend.settlement.dto.CreateAnalysisSetRequest;
-import com.sellivu.backend.settlement.dto.SettlementAnalysisSetItemResponse;
-import com.sellivu.backend.settlement.dto.SettlementAnalysisSetResponse;
-import com.sellivu.backend.settlement.dto.WorkspaceContextResponse;
+import com.sellivu.backend.settlement.dto.*;
 import com.sellivu.backend.settlement.service.SettlementAnalysisSetService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -66,5 +63,12 @@ public class SettlementAnalysisSetController {
             @PathVariable Long analysisSetId
     ) {
         return settlementAnalysisSetService.getMySavedSetContext(analysisSetId, null);
+    }
+
+    @PostMapping("/my/{analysisSetId}/restore")
+    public void restoreMySavedSetToWorkspace(
+            @PathVariable Long analysisSetId
+    ) {
+        settlementAnalysisSetService.restoreMySavedSetToWorkspace(analysisSetId, null);
     }
 }

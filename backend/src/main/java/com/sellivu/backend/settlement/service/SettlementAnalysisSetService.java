@@ -2,20 +2,15 @@ package com.sellivu.backend.settlement.service;
 
 import com.sellivu.backend.global.error.ApiException;
 import com.sellivu.backend.global.error.ErrorCode;
-import com.sellivu.backend.settlement.domain.SettlementAnalysisContext;
-import com.sellivu.backend.settlement.domain.SettlementAnalysisSet;
-import com.sellivu.backend.settlement.domain.SettlementAnalysisSetItem;
-import com.sellivu.backend.settlement.domain.SettlementUpload;
+import com.sellivu.backend.settlement.domain.*;
 import com.sellivu.backend.settlement.dto.SettlementAnalysisSetItemResponse;
 import com.sellivu.backend.settlement.dto.SettlementAnalysisSetResponse;
 import com.sellivu.backend.settlement.dto.WorkspaceContextResponse;
+import com.sellivu.backend.settlement.dto.WorkspaceResponse;
 import com.sellivu.backend.settlement.exception.AnalysisSetNotFoundException;
 import com.sellivu.backend.settlement.exception.AnalysisSetUploadAlreadyExistsException;
 import com.sellivu.backend.settlement.exception.SettlementUploadNotFoundException;
-import com.sellivu.backend.settlement.repository.SettlementAnalysisContextRepository;
-import com.sellivu.backend.settlement.repository.SettlementAnalysisSetItemRepository;
-import com.sellivu.backend.settlement.repository.SettlementAnalysisSetRepository;
-import com.sellivu.backend.settlement.repository.SettlementUploadRepository;
+import com.sellivu.backend.settlement.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -34,6 +29,11 @@ public class SettlementAnalysisSetService {
     private final SettlementAnalysisSetItemRepository analysisSetItemRepository;
     private final SettlementUploadRepository settlementUploadRepository;
     private final SettlementAnalysisContextRepository settlementAnalysisContextRepository;
+
+    private final SettlementWorkspaceRepository settlementWorkspaceRepository;
+    private final SettlementWorkspaceFileRepository settlementWorkspaceFileRepository;
+    private final SettlementWorkspaceContextRepository settlementWorkspaceContextRepository;
+    private final SettlementWorkspaceService settlementWorkspaceService;
 
     public SettlementAnalysisSetResponse createSet(String name) {
         String finalName = (name == null || name.isBlank()) ? "기본 분석 세트" : name.trim();
@@ -199,5 +199,85 @@ public class SettlementAnalysisSetService {
         }
 
         return null;
+    }
+
+
+    @Transactional
+    public void restoreMySavedSetToWorkspace(Long analysisSetId, Long userId) {
+        Long resolvedUserId = resolveUserId(userId);
+
+        if (resolvedUserId == null) {
+            throw new ApiException(ErrorCode.AUTH_UNAUTHORIZED);
+        }
+
+        validateMySavedSetAccessible(analysisSetId, resolvedUserId);
+
+        SettlementWorkspace workspace = settlementWorkspaceRepository
+                .findFirstByOwnerTypeAndUserIdAndStatusOrderByIdDesc(
+                        WorkspaceOwnerType.USER,
+                        resolvedUserId,
+                        WorkspaceStatus.ACTIVE
+                )
+                .orElseThrow(() -> new ApiException(ErrorCode.WORKSPACE_NOT_FOUND));
+
+        List<SettlementWorkspaceFile> currentFiles =
+                settlementWorkspaceFileRepository.findAllByWorkspaceIdAndActiveTrueOrderByIdAsc(workspace.getId());
+
+        for (SettlementWorkspaceFile file : currentFiles) {
+            file.deactivate();
+        }
+
+        List<SettlementAnalysisSetItem> items =
+                analysisSetItemRepository.findAllByAnalysisSetIdOrderByIdAsc(analysisSetId);
+
+        for (SettlementAnalysisSetItem item : items) {
+            boolean alreadyExists = settlementWorkspaceFileRepository.existsByWorkspaceIdAndUploadId(
+                    workspace.getId(),
+                    item.getUploadId()
+            );
+
+            if (alreadyExists) {
+                SettlementWorkspaceFile existing = settlementWorkspaceFileRepository
+                        .findByWorkspaceIdAndUploadId(workspace.getId(), item.getUploadId())
+                        .orElseThrow(() -> new ApiException(ErrorCode.INVALID_INPUT_VALUE));
+
+                existing.activate();
+                continue;
+            }
+
+            SettlementUpload upload = settlementUploadRepository.findById(item.getUploadId())
+                    .orElseThrow(() -> new ApiException(ErrorCode.INVALID_INPUT_VALUE));
+
+            SettlementWorkspaceFile workspaceFile = SettlementWorkspaceFile.create(
+                    workspace.getId(),
+                    upload.getId(),
+                    upload.getFileType()
+            );
+
+            settlementWorkspaceFileRepository.save(workspaceFile);
+        }
+
+        SettlementAnalysisContext analysisContext = settlementAnalysisContextRepository
+                .findByAnalysisSetId(analysisSetId)
+                .orElse(null);
+
+        SettlementWorkspaceContext workspaceContext = settlementWorkspaceContextRepository
+                .findByWorkspaceId(workspace.getId())
+                .orElseGet(() -> SettlementWorkspaceContext.createDefault(workspace.getId()));
+
+        if (analysisContext != null) {
+            workspaceContext.update(
+                    analysisContext.getStoreCouponUsage(),
+                    analysisContext.getNaverCouponUsage(),
+                    analysisContext.getPointBenefitUsage(),
+                    analysisContext.getSafeReturnCareUsage(),
+                    analysisContext.getBizWalletOffsetUsage(),
+                    analysisContext.getFastSettlementUsage(),
+                    analysisContext.getClaimIncluded()
+            );
+        }
+
+        settlementWorkspaceContextRepository.save(workspaceContext);
+        workspace.updateSavedAnalysisSetId(analysisSetId);
     }
 }
