@@ -7,11 +7,13 @@ import type {
   IssueRow,
   MonthlyRow,
   OrderRow,
+  PagedResponse,
   SettlementFileType,
   SnapshotRow,
   UpdateAnalysisContextRequest,
   WorkspaceResponse,
   WorkspaceSaveResponse,
+  SettlementRunSummaryResponse,
 } from "../types/settlementAnalysis";
 
 function workspaceHeaders(workspaceToken: string) {
@@ -98,35 +100,18 @@ export async function uploadWorkspaceFile(
   return data;
 }
 
-export async function fetchWorkspaceIssues(
-  workspaceKey: string,
-  workspaceToken: string
-) {
-  const { data } = await http.get<IssueRow[]>(
-    `/api/settlement/workspaces/${workspaceKey}/issues`,
-    workspaceHeaders(workspaceToken)
-  );
-  return data;
-}
-
-export async function fetchWorkspaceSnapshots(
-  workspaceKey: string,
-  workspaceToken: string
-) {
-  const { data } = await http.get<SnapshotRow[]>(
-    `/api/settlement/workspaces/${workspaceKey}/snapshots`,
-    workspaceHeaders(workspaceToken)
-  );
-  return data;
-}
-
 export async function fetchWorkspaceDailyRows(
   workspaceKey: string,
-  workspaceToken: string
+  workspaceToken: string,
+  page = 0,
+  size = 100
 ) {
-  const { data } = await http.get<DailyRow[]>(
-    `/api/settlement/workspaces/${workspaceKey}/daily`,
-    workspaceHeaders(workspaceToken)
+  const { data } = await http.get<PagedResponse<DailyRow>>(
+    `/api/settlement/workspaces/${workspaceKey}/active-run/daily`,
+    {
+      ...workspaceHeaders(workspaceToken),
+      params: { page, size },
+    }
   );
   return data;
 }
@@ -136,30 +121,83 @@ export async function fetchWorkspaceMonthlyRows(
   workspaceToken: string
 ) {
   const { data } = await http.get<MonthlyRow[]>(
-    `/api/settlement/workspaces/${workspaceKey}/monthly`,
+    `/api/settlement/workspaces/${workspaceKey}/active-run/monthly`,
     workspaceHeaders(workspaceToken)
+  );
+  return data;
+}
+
+export async function fetchWorkspaceSummary(
+  workspaceKey: string,
+  workspaceToken: string
+) {
+  const { data } = await http.get<SettlementRunSummaryResponse>(
+    `/api/settlement/workspaces/${workspaceKey}/active-run/summary`,
+    workspaceHeaders(workspaceToken)
+  );
+  return data;
+}
+
+export async function fetchWorkspaceIssues(
+  workspaceKey: string,
+  workspaceToken: string,
+  page = 0,
+  size = 100
+) {
+  const { data } = await http.get<PagedResponse<IssueRow>>(
+    `/api/settlement/workspaces/${workspaceKey}/active-run/issues`,
+    {
+      ...workspaceHeaders(workspaceToken),
+      params: { page, size },
+    }
+  );
+  return data;
+}
+
+export async function fetchWorkspaceSnapshots(
+  workspaceKey: string,
+  workspaceToken: string,
+  page = 0,
+  size = 100
+) {
+  const { data } = await http.get<PagedResponse<SnapshotRow>>(
+    `/api/settlement/workspaces/${workspaceKey}/active-run/snapshots`,
+    {
+      ...workspaceHeaders(workspaceToken),
+      params: { page, size },
+    }
   );
   return data;
 }
 
 export async function fetchWorkspaceOrderRows(
   workspaceKey: string,
-  workspaceToken: string
+  workspaceToken: string,
+  page = 0,
+  size = 100
 ) {
-  const { data } = await http.get<OrderRow[]>(
-    `/api/settlement/workspaces/${workspaceKey}/orders`,
-    workspaceHeaders(workspaceToken)
+  const { data } = await http.get<PagedResponse<OrderRow>>(
+    `/api/settlement/workspaces/${workspaceKey}/active-run/orders`,
+    {
+      ...workspaceHeaders(workspaceToken),
+      params: { page, size },
+    }
   );
   return data;
 }
 
 export async function fetchWorkspaceFeeRows(
   workspaceKey: string,
-  workspaceToken: string
+  workspaceToken: string,
+  page = 0,
+  size = 100
 ) {
-  const { data } = await http.get<FeeRow[]>(
-    `/api/settlement/workspaces/${workspaceKey}/fees`,
-    workspaceHeaders(workspaceToken)
+  const { data } = await http.get<PagedResponse<FeeRow>>(
+    `/api/settlement/workspaces/${workspaceKey}/active-run/fees`,
+    {
+      ...workspaceHeaders(workspaceToken),
+      params: { page, size },
+    }
   );
   return data;
 }
@@ -176,7 +214,6 @@ export async function saveWorkspace(
   return data;
 }
 
-
 export async function removeWorkspaceFile(
   workspaceKey: string,
   workspaceToken: string,
@@ -186,5 +223,35 @@ export async function removeWorkspaceFile(
     `/api/settlement/workspaces/${workspaceKey}/files/${workspaceFileId}`,
     workspaceHeaders(workspaceToken)
   );
+  return data;
+}
+
+export async function startWorkspaceRun(
+  workspaceKey: string,
+  workspaceToken: string,
+  dailyUploadId?: number | null,
+  orderUploadId?: number | null,
+  feeUploadId?: number | null
+) {
+  const params = new URLSearchParams();
+
+  if (dailyUploadId != null) {
+    params.set("dailyUploadId", String(dailyUploadId));
+  }
+
+  if (orderUploadId != null) {
+    params.set("orderUploadId", String(orderUploadId));
+  }
+
+  if (feeUploadId != null) {
+    params.set("feeUploadId", String(feeUploadId));
+  }
+
+  const query = params.toString();
+  const url = query
+    ? `/api/settlement/workspaces/${workspaceKey}/runs/start?${query}`
+    : `/api/settlement/workspaces/${workspaceKey}/runs/start`;
+
+  const { data } = await http.post(url, {}, workspaceHeaders(workspaceToken));
   return data;
 }

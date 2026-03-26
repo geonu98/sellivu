@@ -8,10 +8,12 @@ import {
   fetchWorkspaceMonthlyRows,
   fetchWorkspaceOrderRows,
   fetchWorkspaceSnapshots,
+  fetchWorkspaceSummary,
   removeWorkspaceFile,
   saveWorkspace,
   updateWorkspaceContext,
   uploadWorkspaceFile,
+  startWorkspaceRun,
 } from "../../api/settlementWorkspaceApi";
 import {
   fetchAnalysisSets,
@@ -24,10 +26,10 @@ import SettlementContextForm from "../../components/settlement/context/Settlemen
 import SettlementResultTabs from "../../components/settlement/tabs/SettlementResultTabs";
 import IssuesTable from "../../components/settlement/tabs/IssuesTable";
 import SnapshotsTable from "../../components/settlement/tabs/SnapshotsTable";
-import DailyTable from "../../components/settlement/tabs/DailyTable";
-import MonthlyTable from "../../components/settlement/tabs/MonthlyTable";
 import OrdersTable from "../../components/settlement/tabs/OrdersTable";
 import FeesTable from "../../components/settlement/tabs/FeesTable";
+import DailyTable from "../../components/settlement/tabs/DailyTable";
+import MonthlyTable from "../../components/settlement/tabs/MonthlyTable";
 import type {
   AnalysisCapabilityResponse,
   AnalysisContextResponse,
@@ -38,6 +40,7 @@ import type {
   MonthlyRow,
   OrderRow,
   SettlementFileType,
+  SettlementRunSummaryResponse,
   SnapshotRow,
   UpdateAnalysisContextRequest,
   WorkspaceResponse,
@@ -425,6 +428,34 @@ function EmptyBoxIcon({ className = "h-8 w-8" }: { className?: string }) {
   );
 }
 
+type TabPageState<T> = {
+  items: T[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  hasNext: boolean;
+  loading: boolean;
+  loaded: boolean;
+};
+
+const DEFAULT_PAGE_SIZE = 100;
+
+function createEmptyTabPageState<T>(
+  size: number = DEFAULT_PAGE_SIZE
+): TabPageState<T> {
+  return {
+    items: [],
+    page: 0,
+    size,
+    totalElements: 0,
+    totalPages: 0,
+    hasNext: false,
+    loading: false,
+    loaded: false,
+  };
+}
+
 export default function SettlementAnalysisPage() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const isAuthInitialized = useAuthStore((state) => state.isAuthInitialized);
@@ -441,12 +472,19 @@ export default function SettlementAnalysisPage() {
     useState<AnalysisCapabilityResponse | null>(null);
   const [context, setContext] = useState<AnalysisContextResponse | null>(null);
 
-  const [issues, setIssues] = useState<IssueRow[]>([]);
-  const [snapshots, setSnapshots] = useState<SnapshotRow[]>([]);
-  const [dailyRows, setDailyRows] = useState<DailyRow[]>([]);
-  const [monthlyRows, setMonthlyRows] = useState<MonthlyRow[]>([]);
-  const [orderRows, setOrderRows] = useState<OrderRow[]>([]);
-  const [feeRows, setFeeRows] = useState<FeeRow[]>([]);
+  const [issuesState, setIssuesState] =
+    useState<TabPageState<IssueRow>>(createEmptyTabPageState());
+  const [snapshotsState, setSnapshotsState] =
+    useState<TabPageState<SnapshotRow>>(createEmptyTabPageState());
+  const [ordersState, setOrdersState] =
+    useState<TabPageState<OrderRow>>(createEmptyTabPageState());
+  const [feesState, setFeesState] =
+    useState<TabPageState<FeeRow>>(createEmptyTabPageState());
+  const [dailyState, setDailyState] =
+    useState<TabPageState<DailyRow>>(createEmptyTabPageState());
+  const [monthlyState, setMonthlyState] = useState<MonthlyRow[]>([]);
+  const [summaryState, setSummaryState] =
+    useState<SettlementRunSummaryResponse | null>(null);
 
   const [analysisSets, setAnalysisSets] = useState<AnalysisSetResponse[]>([]);
   const [analysisSetsLoading, setAnalysisSetsLoading] = useState(false);
@@ -466,6 +504,7 @@ export default function SettlementAnalysisPage() {
   const [removingFile, setRemovingFile] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [skipAutoInitOnce, setSkipAutoInitOnce] = useState(false);
+  const [suspendAutoResultFetch, setSuspendAutoResultFetch] = useState(false);
 
   const [isRestoreConfirmOpen, setIsRestoreConfirmOpen] = useState(false);
   const [pendingRestoreAnalysisSetId, setPendingRestoreAnalysisSetId] =
@@ -474,7 +513,6 @@ export default function SettlementAnalysisPage() {
   const [restoreWithoutSaveLoading, setRestoreWithoutSaveLoading] =
     useState(false);
 
-  // 추가: 현재 작업이 저장되지 않은 상태인지 추적
   const [hasUnsavedWorkspaceChanges, setHasUnsavedWorkspaceChanges] =
     useState(false);
 
@@ -489,42 +527,244 @@ export default function SettlementAnalysisPage() {
 
   const normalizedContext = useMemo(() => normalizeContext(context), [context]);
 
-  async function loadWorkspaceResultData(
+  function hasActiveWorkspaceFiles(workspaceArg?: WorkspaceResponse | null) {
+    return (workspaceArg?.files ?? []).some((file) => file.active);
+  }
+
+
+  function resetPagedResultStates() {
+    setIssuesState(createEmptyTabPageState());
+    setSnapshotsState(createEmptyTabPageState());
+    setOrdersState(createEmptyTabPageState());
+    setFeesState(createEmptyTabPageState());
+    setDailyState(createEmptyTabPageState());
+    setMonthlyState([]);
+    setSummaryState(null);
+  }
+
+  function getActiveUploadId(
+    fileType: SettlementFileType,
+    workspaceArg?: WorkspaceResponse | null
+  ) {
+    const activeFile = (workspaceArg?.files ?? workspace?.files ?? []).find(
+      (file) => file.active && file.fileType === fileType
+    );
+
+    return activeFile?.uploadId ?? null;
+  }
+
+  async function runActiveWorkspaceAnalysis(
+  workspaceKey: string,
+  workspaceToken: string,
+  workspaceArg?: WorkspaceResponse | null
+) {
+  const dailyUploadId = getActiveUploadId("DAILY_SETTLEMENT", workspaceArg);
+  const orderUploadId = getActiveUploadId("ORDER_SETTLEMENT", workspaceArg);
+  const feeUploadId = getActiveUploadId("FEE_DETAIL", workspaceArg);
+
+  if (
+    dailyUploadId == null &&
+    orderUploadId == null &&
+    feeUploadId == null
+  ) {
+    return;
+  }
+
+  await startWorkspaceRun(
+    workspaceKey,
+    workspaceToken,
+    dailyUploadId,
+    orderUploadId,
+    feeUploadId
+  );
+}
+
+  async function fetchActiveTabData(
+    tab: TabKey,
     workspaceKey: string,
     workspaceToken: string,
-    capabilityRes?: AnalysisCapabilityResponse
+    capabilityRes?: AnalysisCapabilityResponse,
+    page?: number
   ) {
     const availableViews =
       capabilityRes?.availableViews ?? capability?.availableViews ?? [];
 
-    const [issuesRes, snapshotsRes, dailyRes, monthlyRes, ordersRes, feesRes] =
-      await Promise.all([
-        availableViews.includes("ISSUES")
-          ? fetchWorkspaceIssues(workspaceKey, workspaceToken)
-          : Promise.resolve([]),
-        availableViews.includes("ORDER_FEE_CROSS_CHECK")
-          ? fetchWorkspaceSnapshots(workspaceKey, workspaceToken)
-          : Promise.resolve([]),
-        availableViews.includes("DAILY")
-          ? fetchWorkspaceDailyRows(workspaceKey, workspaceToken)
-          : Promise.resolve([]),
-        availableViews.includes("MONTHLY")
-          ? fetchWorkspaceMonthlyRows(workspaceKey, workspaceToken)
-          : Promise.resolve([]),
-        availableViews.includes("ORDER_DETAIL")
-          ? fetchWorkspaceOrderRows(workspaceKey, workspaceToken)
-          : Promise.resolve([]),
-        availableViews.includes("FEE_DETAIL")
-          ? fetchWorkspaceFeeRows(workspaceKey, workspaceToken)
-          : Promise.resolve([]),
-      ]);
+    if (tab === "OVERVIEW" || tab === "ISSUES") {
+      if (!availableViews.includes("ISSUES")) {
+        setIssuesState(createEmptyTabPageState());
+        return;
+      }
 
-    setIssues(issuesRes as IssueRow[]);
-    setSnapshots(snapshotsRes as SnapshotRow[]);
-    setDailyRows(dailyRes as DailyRow[]);
-    setMonthlyRows(monthlyRes as MonthlyRow[]);
-    setOrderRows(ordersRes as OrderRow[]);
-    setFeeRows(feesRes as FeeRow[]);
+      const nextPage = page ?? 0;
+      const size = issuesState.size || DEFAULT_PAGE_SIZE;
+
+      setIssuesState((prev) => ({ ...prev, loading: true }));
+
+      const res = await fetchWorkspaceIssues(
+        workspaceKey,
+        workspaceToken,
+        nextPage,
+        size
+      );
+
+      setIssuesState({
+        ...res,
+        loading: false,
+        loaded: true,
+      });
+      return;
+    }
+
+    if (tab === "SNAPSHOTS") {
+      const canFetchSnapshots =
+        availableViews.includes("ORDER_FEE_CROSS_CHECK") ||
+        availableViews.includes("ORDER_DETAIL") ||
+        availableViews.includes("FEE_DETAIL");
+
+      if (!canFetchSnapshots) {
+        setSnapshotsState(createEmptyTabPageState());
+        return;
+      }
+
+      const nextPage = page ?? 0;
+      const size = snapshotsState.size || DEFAULT_PAGE_SIZE;
+
+      setSnapshotsState((prev) => ({ ...prev, loading: true }));
+
+      try {
+        const res = await fetchWorkspaceSnapshots(
+          workspaceKey,
+          workspaceToken,
+          nextPage,
+          size
+        );
+
+        setSnapshotsState({
+          ...res,
+          loading: false,
+          loaded: true,
+        });
+      } catch (error: any) {
+        if (error?.response?.status === 404) {
+          setSnapshotsState({
+            ...createEmptyTabPageState(),
+            loaded: true,
+          });
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
+    if (tab === "ORDERS") {
+      if (!availableViews.includes("ORDER_DETAIL")) {
+        setOrdersState(createEmptyTabPageState());
+        return;
+      }
+
+      const nextPage = page ?? 0;
+      const size = ordersState.size || DEFAULT_PAGE_SIZE;
+
+      setOrdersState((prev) => ({ ...prev, loading: true }));
+
+      const res = await fetchWorkspaceOrderRows(
+        workspaceKey,
+        workspaceToken,
+        nextPage,
+        size
+      );
+
+      setOrdersState({
+        ...res,
+        loading: false,
+        loaded: true,
+      });
+      return;
+    }
+
+    if (tab === "FEES") {
+      if (!availableViews.includes("FEE_DETAIL")) {
+        setFeesState(createEmptyTabPageState());
+        return;
+      }
+
+      const nextPage = page ?? 0;
+      const size = feesState.size || DEFAULT_PAGE_SIZE;
+
+      setFeesState((prev) => ({ ...prev, loading: true }));
+
+      const res = await fetchWorkspaceFeeRows(
+        workspaceKey,
+        workspaceToken,
+        nextPage,
+        size
+      );
+
+      setFeesState({
+        ...res,
+        loading: false,
+        loaded: true,
+      });
+      return;
+    }
+
+    if (tab === "DAILY") {
+      if (!availableViews.includes("DAILY")) {
+        setDailyState(createEmptyTabPageState());
+        return;
+      }
+
+      const nextPage = page ?? 0;
+      const size = dailyState.size || DEFAULT_PAGE_SIZE;
+
+      setDailyState((prev) => ({ ...prev, loading: true }));
+
+      const res = await fetchWorkspaceDailyRows(
+        workspaceKey,
+        workspaceToken,
+        nextPage,
+        size
+      );
+
+      setDailyState({
+        ...res,
+        loading: false,
+        loaded: true,
+      });
+      return;
+    }
+
+    if (tab === "MONTHLY") {
+      if (!availableViews.includes("MONTHLY")) {
+        setMonthlyState([]);
+        return;
+      }
+
+      const res = await fetchWorkspaceMonthlyRows(
+        workspaceKey,
+        workspaceToken
+      );
+
+      setMonthlyState(res);
+      return;
+    }
+  }
+
+  async function loadWorkspaceSummary(
+    workspaceKey: string,
+    workspaceToken: string
+  ) {
+    try {
+      const summaryRes = await fetchWorkspaceSummary(workspaceKey, workspaceToken);
+      setSummaryState(summaryRes);
+    } catch (error: any) {
+      if (error?.response?.status === 404) {
+        setSummaryState(null);
+        return;
+      }
+      throw error;
+    }
   }
 
   async function refreshAnalysisSets() {
@@ -545,163 +785,248 @@ export default function SettlementAnalysisPage() {
     }
   }
 
-async function initializeWorkspace(forceCreate = false): Promise<WorkspaceSession> {
-  setPageLoading(true);
-  setErrorMessage(null);
+  async function initializeWorkspace(
+    forceCreate = false
+  ): Promise<WorkspaceSession> {
+    setPageLoading(true);
+    setErrorMessage(null);
 
-  try {
-    const savedSession = loadWorkspaceSession();
+    try {
+      const savedSession = loadWorkspaceSession();
 
-    const candidateSession = forceCreate
-      ? null
-      : workspaceSession || (isAuthenticated ? savedSession : null);
+      const candidateSession = forceCreate
+        ? null
+        : workspaceSession || (isAuthenticated ? savedSession : null);
 
-    if (candidateSession) {
-      const workspaceRes = await fetchWorkspace(
-        candidateSession.workspaceKey,
-        candidateSession.workspaceToken
-      );
-
-      const shouldDropEmptyGuestAfterLogin =
-        isAuthenticated &&
-        workspaceRes.ownerType === "GUEST" &&
-        (workspaceRes.files?.length ?? 0) === 0 &&
-        workspaceRes.savedAnalysisSetId == null;
-
-      if (!shouldDropEmptyGuestAfterLogin) {
-        const nextSession: WorkspaceSession = {
-          ...candidateSession,
-          savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
-        };
-
-        setWorkspaceSession(nextSession);
-        if (isAuthenticated) saveWorkspaceSession(nextSession);
-
-        setWorkspace(workspaceRes);
-        setContext(workspaceRes.context ?? null);
-        setCapability(workspaceRes.capability ?? null);
-
-        await loadWorkspaceResultData(
-          nextSession.workspaceKey,
-          nextSession.workspaceToken,
-          workspaceRes.capability
+      if (candidateSession) {
+        const workspaceRes = await fetchWorkspace(
+          candidateSession.workspaceKey,
+          candidateSession.workspaceToken
         );
 
-        setHasUnsavedWorkspaceChanges(false);
-        return nextSession;
+        const shouldDropEmptyGuestAfterLogin =
+          isAuthenticated &&
+          workspaceRes.ownerType === "GUEST" &&
+          (workspaceRes.files?.length ?? 0) === 0 &&
+          workspaceRes.savedAnalysisSetId == null;
+
+        if (!shouldDropEmptyGuestAfterLogin) {
+          const nextSession: WorkspaceSession = {
+            ...candidateSession,
+            savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
+          };
+
+          setWorkspaceSession(nextSession);
+          if (isAuthenticated) saveWorkspaceSession(nextSession);
+
+          setWorkspace(workspaceRes);
+          setContext(workspaceRes.context ?? null);
+          setCapability(workspaceRes.capability ?? null);
+
+          resetPagedResultStates();
+          if (hasActiveWorkspaceFiles(workspaceRes)) {
+            await loadWorkspaceSummary(
+              nextSession.workspaceKey,
+              nextSession.workspaceToken
+            );
+          } else {
+            setSummaryState(null);
+          }
+
+          await fetchActiveTabData(
+            activeTab,
+            nextSession.workspaceKey,
+            nextSession.workspaceToken,
+            workspaceRes.capability,
+            0
+          );
+
+          setHasUnsavedWorkspaceChanges(false);
+          return nextSession;
+        }
+
+        clearWorkspaceSession();
+        setWorkspaceSession(null);
       }
 
       clearWorkspaceSession();
       setWorkspaceSession(null);
+
+      const created = await createWorkspace();
+
+      if (!created.workspaceToken) {
+        throw new Error("workspaceToken 이 응답에 없습니다.");
+      }
+
+      const session: WorkspaceSession = {
+        workspaceKey: created.workspaceKey,
+        workspaceToken: created.workspaceToken,
+        savedAnalysisSetId: null,
+      };
+
+      const workspaceRes = await fetchWorkspace(
+        session.workspaceKey,
+        session.workspaceToken
+      );
+
+      const nextSession: WorkspaceSession = {
+        ...session,
+        savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
+      };
+
+      setWorkspaceSession(nextSession);
+      if (isAuthenticated) saveWorkspaceSession(nextSession);
+
+      setWorkspace(workspaceRes);
+      setContext(workspaceRes.context ?? null);
+      setCapability(workspaceRes.capability ?? null);
+
+      resetPagedResultStates();
+      if (hasActiveWorkspaceFiles(workspaceRes)) {
+        await loadWorkspaceSummary(
+          nextSession.workspaceKey,
+          nextSession.workspaceToken
+        );
+      } else {
+        setSummaryState(null);
+      }
+
+      await fetchActiveTabData(
+        activeTab,
+        nextSession.workspaceKey,
+        nextSession.workspaceToken,
+        workspaceRes.capability,
+        0
+      );
+
+      setHasUnsavedWorkspaceChanges(false);
+      return nextSession;
+    } catch (error) {
+      clearWorkspaceSession();
+      setWorkspaceSession(null);
+      setWorkspace(null);
+      setCapability(null);
+      setContext(null);
+      resetPagedResultStates();
+      setErrorMessage(getApiErrorMessage(error));
+      throw error;
+    } finally {
+      setPageLoading(false);
     }
-
-    clearWorkspaceSession();
-    setWorkspaceSession(null);
-
-    const created = await createWorkspace();
-
-    if (!created.workspaceToken) {
-      throw new Error("workspaceToken 이 응답에 없습니다.");
-    }
-
-    const session: WorkspaceSession = {
-      workspaceKey: created.workspaceKey,
-      workspaceToken: created.workspaceToken,
-      savedAnalysisSetId: null,
-    };
-
-    const workspaceRes = await fetchWorkspace(
-      session.workspaceKey,
-      session.workspaceToken
-    );
-
-    const nextSession: WorkspaceSession = {
-      ...session,
-      savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
-    };
-
-    setWorkspaceSession(nextSession);
-    if (isAuthenticated) saveWorkspaceSession(nextSession);
-
-    setWorkspace(workspaceRes);
-    setContext(workspaceRes.context ?? null);
-    setCapability(workspaceRes.capability ?? null);
-
-    await loadWorkspaceResultData(
-      nextSession.workspaceKey,
-      nextSession.workspaceToken,
-      workspaceRes.capability
-    );
-
-    setHasUnsavedWorkspaceChanges(false);
-    return nextSession;
-  } catch (error) {
-    clearWorkspaceSession();
-    setWorkspaceSession(null);
-    setWorkspace(null);
-    setCapability(null);
-    setContext(null);
-    setIssues([]);
-    setSnapshots([]);
-    setDailyRows([]);
-    setMonthlyRows([]);
-    setOrderRows([]);
-    setFeeRows([]);
-    setErrorMessage(getApiErrorMessage(error));
-    throw error;
-  } finally {
-    setPageLoading(false);
-  }
-}
-
-  async function refreshWorkspace(sessionArg?: WorkspaceSession) {
-  const session = sessionArg ?? workspaceSession;
-  if (!session) return;
-
-  const workspaceRes = await fetchWorkspace(
-    session.workspaceKey,
-    session.workspaceToken
-  );
-
-  setWorkspace(workspaceRes);
-  setContext(workspaceRes.context ?? null);
-  setCapability(workspaceRes.capability ?? null);
-
-  const nextSession: WorkspaceSession = {
-    ...session,
-    savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
-  };
-
-  setWorkspaceSession(nextSession);
-
-  if (isAuthenticated) {
-    saveWorkspaceSession(nextSession);
   }
 
-  await loadWorkspaceResultData(
-    nextSession.workspaceKey,
-    nextSession.workspaceToken,
-    workspaceRes.capability
-  );
-}
-  async function handleUploadFile(file: File, fileType: SettlementFileType) {
-    if (!workspaceSession || isViewingSavedAnalysis) return;
+  async function refreshWorkspace(
+    sessionArg?: WorkspaceSession,
+    options?: { skipResultData?: boolean }
+  ) {
+    const session = sessionArg ?? workspaceSession;
+    if (!session) return null;
 
-    setErrorMessage(null);
+    const skipResultData = options?.skipResultData ?? false;
+
+    console.time("3.refreshWorkspace_total");
 
     try {
-      await uploadWorkspaceFile(
-        workspaceSession.workspaceKey,
-        workspaceSession.workspaceToken,
-        file,
-        fileType
+      console.time("3-1.fetch_workspace");
+      const workspaceRes = await fetchWorkspace(
+        session.workspaceKey,
+        session.workspaceToken
       );
-      await refreshWorkspace();
-      setHasUnsavedWorkspaceChanges(true);
-    } catch (error) {
-      setErrorMessage(getApiErrorMessage(error));
+      console.timeEnd("3-1.fetch_workspace");
+
+      console.time("3-2.set_workspace_state");
+      setWorkspace(workspaceRes);
+      setContext(workspaceRes.context ?? null);
+      setCapability(workspaceRes.capability ?? null);
+      console.timeEnd("3-2.set_workspace_state");
+
+      const nextSession: WorkspaceSession = {
+        ...session,
+        savedAnalysisSetId: workspaceRes.savedAnalysisSetId ?? null,
+      };
+
+      setWorkspaceSession(nextSession);
+
+      if (isAuthenticated) {
+        saveWorkspaceSession(nextSession);
+      }
+
+      console.time("3-2b.fetch_summary");
+      if (!skipResultData) {
+        resetPagedResultStates();
+
+        if (hasActiveWorkspaceFiles(workspaceRes)) {
+          await loadWorkspaceSummary(
+            nextSession.workspaceKey,
+            nextSession.workspaceToken
+          );
+        } else {
+          setSummaryState(null);
+        }
+      }
+      console.timeEnd("3-2b.fetch_summary");
+
+      if (!skipResultData) {
+        console.time("3-3.fetch_active_tab_data");
+        await fetchActiveTabData(
+          activeTab,
+          nextSession.workspaceKey,
+          nextSession.workspaceToken,
+          workspaceRes.capability,
+          0
+        );
+        console.timeEnd("3-3.fetch_active_tab_data");
+      }
+
+      return workspaceRes;
+    } finally {
+      console.timeEnd("3.refreshWorkspace_total");
     }
   }
+
+async function handleUploadFile(file: File, fileType: SettlementFileType) {
+  if (!workspaceSession || isViewingSavedAnalysis) return;
+
+  setErrorMessage(null);
+  setSuspendAutoResultFetch(true);
+
+  console.time(`1.upload_total_${fileType}`);
+  try {
+    console.time(`1-1.upload_api_${fileType}`);
+    await uploadWorkspaceFile(
+      workspaceSession.workspaceKey,
+      workspaceSession.workspaceToken,
+      file,
+      fileType
+    );
+    console.timeEnd(`1-1.upload_api_${fileType}`);
+
+    console.time(`1-2.refresh_after_upload_${fileType}`);
+    const refreshedWorkspace = await refreshWorkspace(workspaceSession, {
+      skipResultData: true,
+    });
+    console.timeEnd(`1-2.refresh_after_upload_${fileType}`);
+
+    console.time(`1-3.start_run_${fileType}`);
+    await runActiveWorkspaceAnalysis(
+      workspaceSession.workspaceKey,
+      workspaceSession.workspaceToken,
+      refreshedWorkspace
+    );
+    console.timeEnd(`1-3.start_run_${fileType}`);
+
+    console.time(`1-4.refresh_after_run_${fileType}`);
+    await refreshWorkspace(workspaceSession);
+    console.timeEnd(`1-4.refresh_after_run_${fileType}`);
+
+    setHasUnsavedWorkspaceChanges(true);
+  } catch (error) {
+    setErrorMessage(getApiErrorMessage(error));
+  } finally {
+    setSuspendAutoResultFetch(false);
+    console.timeEnd(`1.upload_total_${fileType}`);
+  }
+}
 
   async function handleRemoveFile(workspaceFileId: number) {
     if (!workspaceSession || isViewingSavedAnalysis) return;
@@ -737,27 +1062,51 @@ async function initializeWorkspace(forceCreate = false): Promise<WorkspaceSessio
     setContextSaving(true);
     setErrorMessage(null);
 
+    console.time("4.save_context_total");
     try {
       const payload = normalizedContext;
+
+      console.time("4-1.update_context_api");
       const updated = await updateWorkspaceContext(
         workspaceSession.workspaceKey,
         workspaceSession.workspaceToken,
         payload
       );
+      console.timeEnd("4-1.update_context_api");
 
+      console.time("4-2.set_context_state");
       setContext((updated ?? payload) as AnalysisContextResponse);
+      console.timeEnd("4-2.set_context_state");
 
-      await loadWorkspaceResultData(
+      console.time("4-3.start_run_after_context");
+      await runActiveWorkspaceAnalysis(
         workspaceSession.workspaceKey,
         workspaceSession.workspaceToken,
-        capability ?? undefined
+        workspace
       );
+      console.timeEnd("4-3.start_run_after_context");
+
+      console.time("4-4.reload_result_data_after_context");
+      resetPagedResultStates();
+      await loadWorkspaceSummary(
+        workspaceSession.workspaceKey,
+        workspaceSession.workspaceToken
+      );
+      await fetchActiveTabData(
+        activeTab,
+        workspaceSession.workspaceKey,
+        workspaceSession.workspaceToken,
+        capability ?? undefined,
+        0
+      );
+      console.timeEnd("4-4.reload_result_data_after_context");
 
       setIsOptionEditorOpen(false);
       setHasUnsavedWorkspaceChanges(true);
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error));
     } finally {
+      console.timeEnd("4.save_context_total");
       setContextSaving(false);
     }
   }
@@ -773,39 +1122,59 @@ async function initializeWorkspace(forceCreate = false): Promise<WorkspaceSessio
     setSaveLoading(true);
     setErrorMessage(null);
 
+    console.time("5.save_workspace_total");
     try {
+      console.time("5-1.save_workspace_api");
       await saveWorkspace(
         workspaceSession.workspaceKey,
         workspaceSession.workspaceToken
       );
+      console.timeEnd("5-1.save_workspace_api");
+
+      console.time("5-2.refresh_after_save");
       await refreshWorkspace();
+      console.timeEnd("5-2.refresh_after_save");
+
+      console.time("5-3.refresh_analysis_sets");
       await refreshAnalysisSets();
+      console.timeEnd("5-3.refresh_analysis_sets");
+
       setHasUnsavedWorkspaceChanges(false);
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error));
     } finally {
+      console.timeEnd("5.save_workspace_total");
       setSaveLoading(false);
     }
   }
 
- // saved analysis를 workspace에 복원한 직후 상태는 "저장된 내용을 펼쳐놓은 작업본"으로 간주한다.
-// 따라서 사용자가 추가 수정하기 전까지는 unsaved change가 없는 상태(false)다.
-async function performRestoreAnalysisSet(
-  analysisSetId: number,
-  sessionArg?: WorkspaceSession
-) {
-  await restoreAnalysisSetToWorkspace(analysisSetId);
-  setSelectedAnalysisSetId(analysisSetId);
-  setIsViewingSavedAnalysis(false);
-  setIsSavedListOpen(false);
-  await refreshWorkspace(sessionArg);
-  setHasUnsavedWorkspaceChanges(false);
-}
+  async function performRestoreAnalysisSet(
+    analysisSetId: number,
+    sessionArg?: WorkspaceSession
+  ) {
+    console.time("6.restore_analysis_total");
+    try {
+      console.time("6-1.restore_api");
+      await restoreAnalysisSetToWorkspace(analysisSetId);
+      console.timeEnd("6-1.restore_api");
+
+      setSelectedAnalysisSetId(analysisSetId);
+      setIsViewingSavedAnalysis(false);
+      setIsSavedListOpen(false);
+
+      console.time("6-2.refresh_after_restore");
+      await refreshWorkspace(sessionArg);
+      console.timeEnd("6-2.refresh_after_restore");
+
+      setHasUnsavedWorkspaceChanges(false);
+    } finally {
+      console.timeEnd("6.restore_analysis_total");
+    }
+  }
 
   async function handleOpenAnalysisSet(analysisSetId: number) {
     setErrorMessage(null);
 
-    // 수정: ACTIVE/SAVED 여부가 아니라 미저장 변경 여부로 모달 판단
     if (hasUnsavedWorkspaceChanges) {
       setPendingRestoreAnalysisSetId(analysisSetId);
       setIsRestoreConfirmOpen(true);
@@ -822,42 +1191,42 @@ async function performRestoreAnalysisSet(
     }
   }
 
-async function handleConfirmSaveAndRestore() {
-  if (!pendingRestoreAnalysisSetId) return;
+  async function handleConfirmSaveAndRestore() {
+    if (!pendingRestoreAnalysisSetId) return;
 
-  if (!isAuthenticated) {
-    openAuthModal();
-    return;
+    if (!isAuthenticated) {
+      openAuthModal();
+      return;
+    }
+
+    if (!workspaceSession) {
+      setErrorMessage("현재 워크스페이스가 없습니다.");
+      return;
+    }
+
+    setRestoreAfterSaveLoading(true);
+    setErrorMessage(null);
+
+    try {
+      await saveWorkspace(
+        workspaceSession.workspaceKey,
+        workspaceSession.workspaceToken
+      );
+
+      await refreshAnalysisSets();
+
+      const newSession = await initializeWorkspace(true);
+      await performRestoreAnalysisSet(pendingRestoreAnalysisSetId, newSession);
+
+      setIsRestoreConfirmOpen(false);
+      setPendingRestoreAnalysisSetId(null);
+      setHasUnsavedWorkspaceChanges(false);
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error));
+    } finally {
+      setRestoreAfterSaveLoading(false);
+    }
   }
-
-  if (!workspaceSession) {
-    setErrorMessage("현재 워크스페이스가 없습니다.");
-    return;
-  }
-
-  setRestoreAfterSaveLoading(true);
-  setErrorMessage(null);
-
-  try {
-    await saveWorkspace(
-      workspaceSession.workspaceKey,
-      workspaceSession.workspaceToken
-    );
-
-    await refreshAnalysisSets();
-
-    const newSession = await initializeWorkspace(true);
-    await performRestoreAnalysisSet(pendingRestoreAnalysisSetId, newSession);
-
-    setIsRestoreConfirmOpen(false);
-    setPendingRestoreAnalysisSetId(null);
-    setHasUnsavedWorkspaceChanges(false);
-  } catch (error) {
-    setErrorMessage(getApiErrorMessage(error));
-  } finally {
-    setRestoreAfterSaveLoading(false);
-  }
-}
 
   async function handleConfirmRestoreWithoutSave() {
     if (!pendingRestoreAnalysisSetId) return;
@@ -902,12 +1271,7 @@ async function handleConfirmSaveAndRestore() {
       setWorkspace(null);
       setCapability(null);
       setContext(null);
-      setIssues([]);
-      setSnapshots([]);
-      setDailyRows([]);
-      setMonthlyRows([]);
-      setOrderRows([]);
-      setFeeRows([]);
+      resetPagedResultStates();
       setAnalysisSets([]);
       setSelectedAnalysisSetId(null);
       setIsViewingSavedAnalysis(false);
@@ -926,12 +1290,7 @@ async function handleConfirmSaveAndRestore() {
     setWorkspace(null);
     setCapability(null);
     setContext(null);
-    setIssues([]);
-    setSnapshots([]);
-    setDailyRows([]);
-    setMonthlyRows([]);
-    setOrderRows([]);
-    setFeeRows([]);
+    resetPagedResultStates();
     setSelectedAnalysisSetId(null);
     setIsViewingSavedAnalysis(false);
     setIsWorkspaceFilesOpen(false);
@@ -977,10 +1336,82 @@ async function handleConfirmSaveAndRestore() {
       setActiveTab("OVERVIEW");
     }
   }, [tabs, activeTab]);
+useEffect(() => {
+  if (!workspaceSession || pageLoading || suspendAutoResultFetch) return;
+  if (isViewingSavedAnalysis) return;
+
+  const needIssues =
+    (activeTab === "OVERVIEW" || activeTab === "ISSUES") &&
+    !issuesState.loaded &&
+    !issuesState.loading;
+
+  const needSnapshots =
+    activeTab === "SNAPSHOTS" &&
+    !snapshotsState.loaded &&
+    !snapshotsState.loading;
+
+  const needOrders =
+    activeTab === "ORDERS" &&
+    !ordersState.loaded &&
+    !ordersState.loading;
+
+  const needFees =
+    activeTab === "FEES" &&
+    !feesState.loaded &&
+    !feesState.loading;
+
+  const needDaily =
+    activeTab === "DAILY" &&
+    !dailyState.loaded &&
+    !dailyState.loading;
+
+  const needMonthly =
+    activeTab === "MONTHLY" &&
+    monthlyState.length === 0;
+
+  if (
+    !needIssues &&
+    !needSnapshots &&
+    !needOrders &&
+    !needFees &&
+    !needDaily &&
+    !needMonthly
+  ) {
+    return;
+  }
+
+  fetchActiveTabData(
+    activeTab,
+    workspaceSession.workspaceKey,
+    workspaceSession.workspaceToken,
+    capability ?? undefined,
+    0
+  ).catch((error) => {
+    setErrorMessage(getApiErrorMessage(error));
+  });
+}, [
+  activeTab,
+  workspaceSession,
+  capability,
+  isViewingSavedAnalysis,
+  pageLoading,
+  suspendAutoResultFetch,
+  issuesState.loaded,
+  issuesState.loading,
+  snapshotsState.loaded,
+  snapshotsState.loading,
+  ordersState.loaded,
+  ordersState.loading,
+  feesState.loaded,
+  feesState.loading,
+  dailyState.loaded,
+  dailyState.loading,
+  monthlyState.length,
+]);
 
   function renderResultContent() {
     if (activeTab === "OVERVIEW" || activeTab === "ISSUES") {
-      if (!issues.length) {
+      if (!issuesState.loading && issuesState.totalElements === 0) {
         return (
           <EmptyState
             title="이슈 데이터가 없습니다"
@@ -988,11 +1419,34 @@ async function handleConfirmSaveAndRestore() {
           />
         );
       }
-      return <IssuesTable rows={issues} />;
+
+      return (
+        <IssuesTable
+          rows={issuesState.items}
+          page={issuesState.page}
+          size={issuesState.size}
+          totalElements={issuesState.totalElements}
+          totalPages={issuesState.totalPages}
+          hasNext={issuesState.hasNext}
+          loading={issuesState.loading}
+          onPageChange={(nextPage: number) => {
+            if (!workspaceSession) return;
+            fetchActiveTabData(
+              "ISSUES",
+              workspaceSession.workspaceKey,
+              workspaceSession.workspaceToken,
+              capability ?? undefined,
+              nextPage
+            ).catch((error) => {
+              setErrorMessage(getApiErrorMessage(error));
+            });
+          }}
+        />
+      );
     }
 
     if (activeTab === "SNAPSHOTS") {
-      if (!snapshots.length) {
+      if (!snapshotsState.loading && snapshotsState.totalElements === 0) {
         return (
           <EmptyState
             title="스냅샷 데이터가 없습니다"
@@ -1000,35 +1454,34 @@ async function handleConfirmSaveAndRestore() {
           />
         );
       }
-      return <SnapshotsTable rows={snapshots} />;
-    }
 
-    if (activeTab === "DAILY") {
-      if (!dailyRows.length) {
-        return (
-          <EmptyState
-            title="일별 정산 데이터가 없습니다"
-            description="일별 정산 파일 업로드 후 결과가 생성되면 이 표에 나타납니다."
-          />
-        );
-      }
-      return <DailyTable rows={dailyRows} />;
-    }
-
-    if (activeTab === "MONTHLY") {
-      if (!monthlyRows.length) {
-        return (
-          <EmptyState
-            title="월별 정산 데이터가 없습니다"
-            description="월별 비교 데이터가 준비되면 이곳에 표시됩니다."
-          />
-        );
-      }
-      return <MonthlyTable rows={monthlyRows} />;
+      return (
+        <SnapshotsTable
+          rows={snapshotsState.items}
+          page={snapshotsState.page}
+          size={snapshotsState.size}
+          totalElements={snapshotsState.totalElements}
+          totalPages={snapshotsState.totalPages}
+          hasNext={snapshotsState.hasNext}
+          loading={snapshotsState.loading}
+          onPageChange={(nextPage: number) => {
+            if (!workspaceSession) return;
+            fetchActiveTabData(
+              "SNAPSHOTS",
+              workspaceSession.workspaceKey,
+              workspaceSession.workspaceToken,
+              capability ?? undefined,
+              nextPage
+            ).catch((error) => {
+              setErrorMessage(getApiErrorMessage(error));
+            });
+          }}
+        />
+      );
     }
 
     if (activeTab === "ORDERS") {
-      if (!orderRows.length) {
+      if (!ordersState.loading && ordersState.totalElements === 0) {
         return (
           <EmptyState
             title="건별 정산 데이터가 없습니다"
@@ -1036,11 +1489,34 @@ async function handleConfirmSaveAndRestore() {
           />
         );
       }
-      return <OrdersTable rows={orderRows} />;
+
+      return (
+        <OrdersTable
+          rows={ordersState.items}
+          page={ordersState.page}
+          size={ordersState.size}
+          totalElements={ordersState.totalElements}
+          totalPages={ordersState.totalPages}
+          hasNext={ordersState.hasNext}
+          loading={ordersState.loading}
+          onPageChange={(nextPage: number) => {
+            if (!workspaceSession) return;
+            fetchActiveTabData(
+              "ORDERS",
+              workspaceSession.workspaceKey,
+              workspaceSession.workspaceToken,
+              capability ?? undefined,
+              nextPage
+            ).catch((error) => {
+              setErrorMessage(getApiErrorMessage(error));
+            });
+          }}
+        />
+      );
     }
 
     if (activeTab === "FEES") {
-      if (!feeRows.length) {
+      if (!feesState.loading && feesState.totalElements === 0) {
         return (
           <EmptyState
             title="수수료 상세 데이터가 없습니다"
@@ -1048,17 +1524,89 @@ async function handleConfirmSaveAndRestore() {
           />
         );
       }
-      return <FeesTable rows={feeRows} />;
+
+      return (
+        <FeesTable
+          rows={feesState.items}
+          page={feesState.page}
+          size={feesState.size}
+          totalElements={feesState.totalElements}
+          totalPages={feesState.totalPages}
+          hasNext={feesState.hasNext}
+          loading={feesState.loading}
+          onPageChange={(nextPage: number) => {
+            if (!workspaceSession) return;
+            fetchActiveTabData(
+              "FEES",
+              workspaceSession.workspaceKey,
+              workspaceSession.workspaceToken,
+              capability ?? undefined,
+              nextPage
+            ).catch((error) => {
+              setErrorMessage(getApiErrorMessage(error));
+            });
+          }}
+        />
+      );
     }
 
+ if (activeTab === "DAILY") {
+  if (!dailyState.loading && dailyState.totalElements === 0) {
     return (
       <EmptyState
-        title="표시할 데이터가 없습니다"
-        description="업로드 후 결과가 생성되면 이 영역에 검증 리포트가 나타납니다."
+        title="일별 정산 데이터가 없습니다"
+        description="일별 정산 업로드 후 active-run 결과가 생성되면 여기에 표시됩니다."
       />
     );
   }
-   const basedAnalysisSetId =
+
+  return (
+    <DailyTable
+      rows={dailyState.items}
+      page={dailyState.page}
+      size={dailyState.size}
+      totalElements={dailyState.totalElements}
+      totalPages={dailyState.totalPages}
+      hasNext={dailyState.hasNext}
+      loading={dailyState.loading}
+      onPageChange={(nextPage: number) => {
+        if (!workspaceSession) return;
+        fetchActiveTabData(
+          "DAILY",
+          workspaceSession.workspaceKey,
+          workspaceSession.workspaceToken,
+          capability ?? undefined,
+          nextPage
+        ).catch((error) => {
+          setErrorMessage(getApiErrorMessage(error));
+        });
+      }}
+    />
+  );
+}
+
+if (activeTab === "MONTHLY") {
+  if (monthlyState.length === 0) {
+    return (
+      <EmptyState
+        title="월별 정산 데이터가 없습니다"
+        description="일별 정산 결과를 기준으로 월별 집계가 생성되면 여기에 표시됩니다."
+      />
+    );
+  }
+
+  return <MonthlyTable rows={monthlyState} />;
+}
+
+return (
+  <EmptyState
+    title="표시할 데이터가 없습니다"
+    description="업로드 후 결과가 생성되면 이 영역에 검증 리포트가 나타납니다."
+  />
+);
+  }
+
+  const basedAnalysisSetId =
     workspaceSession?.savedAnalysisSetId ?? selectedAnalysisSetId ?? null;
 
   const basedAnalysisSet = basedAnalysisSetId
@@ -1210,7 +1758,7 @@ async function handleConfirmSaveAndRestore() {
                   </div>
                 </div>
 
-                             <div className="shrink-0 border-t border-slate-100 bg-white px-3 py-3 sm:px-4">
+                <div className="shrink-0 border-t border-slate-100 bg-white px-3 py-3 sm:px-4">
                   <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
                     <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
                       Current Workspace
@@ -1285,25 +1833,29 @@ async function handleConfirmSaveAndRestore() {
                 <div className="mb-3 grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                   <KpiCard
                     label="발견된 이슈"
-                    value={issues.length}
-                    tone={issues.length > 0 ? "rose" : "blue"}
+                    value={summaryState?.issueCount ?? issuesState.totalElements}
+                    tone={
+                      (summaryState?.issueCount ?? issuesState.totalElements) > 0
+                        ? "rose"
+                        : "blue"
+                    }
                     icon={<IssueIcon />}
                   />
                   <KpiCard
                     label="검증 완료"
-                    value={snapshots.length}
+                    value={summaryState?.snapshotCount ?? snapshotsState.totalElements}
                     tone="emerald"
                     icon={<CheckIcon />}
                   />
                   <KpiCard
-                    label="정산 행"
-                    value={dailyRows.length}
+                    label="주문 상세"
+                    value={summaryState?.orderCount ?? ordersState.totalElements}
                     tone="blue"
                     icon={<SnapshotIcon />}
                   />
                   <KpiCard
                     label="수수료 상세"
-                    value={feeRows.length}
+                    value={summaryState?.feeCount ?? feesState.totalElements}
                     tone="amber"
                     icon={<AlertIcon />}
                   />

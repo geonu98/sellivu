@@ -3,11 +3,18 @@ import type { IssueRow } from "../../../types/settlementAnalysis";
 import { severityBadgeClass } from "../../../utils/settlementBadge";
 import { formatDate } from "../../../utils/date";
 
+type IssueFilter = "ACTION_REQUIRED" | "ALL" | "EXPLAINABLE" | "REFUND";
+
 type Props = {
   rows: IssueRow[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  hasNext: boolean;
+  loading?: boolean;
+  onPageChange: (page: number) => void;
 };
-
-type IssueFilter = "ACTION_REQUIRED" | "ALL" | "EXPLAINABLE" | "REFUND";
 
 function sourceTypeLabel(sourceType: string | null | undefined) {
   switch (sourceType) {
@@ -48,14 +55,8 @@ function safeSeverityClass(severity: string | null | undefined) {
 function buildCheckValues(row: IssueRow) {
   const values: string[] = [];
 
-  if (row.orderNo) {
-    values.push(`주문번호: ${row.orderNo}`);
-  }
-
-  if (row.productOrderNo) {
-    values.push(`상품주문번호: ${row.productOrderNo}`);
-  }
-
+  if (row.orderNo) values.push(`주문번호: ${row.orderNo}`);
+  if (row.productOrderNo) values.push(`상품주문번호: ${row.productOrderNo}`);
   if (typeof row.issueDate === "string" && row.issueDate) {
     values.push(`정산일: ${formatDate(row.issueDate)}`);
   }
@@ -66,7 +67,6 @@ function buildCheckValues(row: IssueRow) {
 function isRefundCandidate(row: IssueRow) {
   return row.refundCandidate === true;
 }
-
 
 function isExplainable(row: IssueRow) {
   return row.judgementStatus === "EXPLAINABLE";
@@ -83,7 +83,7 @@ function renderStatusBadges(row: IssueRow) {
     <span
       key="status"
       className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-       row.judgementStatus === "EXPLAINABLE"
+        row.judgementStatus === "EXPLAINABLE"
           ? "bg-blue-50 text-blue-700"
           : "bg-rose-50 text-rose-700"
       }`}
@@ -117,7 +117,15 @@ function renderStatusBadges(row: IssueRow) {
   return badges;
 }
 
-export default function IssuesTable({ rows }: Props) {
+export default function IssuesTable({
+  rows,
+  page,
+  totalElements,
+  totalPages,
+  hasNext,
+  loading = false,
+  onPageChange,
+}: Props) {
   const [filter, setFilter] = useState<IssueFilter>("ACTION_REQUIRED");
 
   const summary = useMemo(() => {
@@ -156,7 +164,7 @@ export default function IssuesTable({ rows }: Props) {
     }
   }, [rows, filter]);
 
-  if (rows.length === 0) {
+  if (rows.length === 0 && !loading) {
     return (
       <div className="rounded-xl border bg-white p-6 text-sm text-slate-500">
         이슈 데이터가 없습니다.
@@ -175,16 +183,8 @@ export default function IssuesTable({ rows }: Props) {
       label: "설명 가능",
       count: summary.explainableCount,
     },
-    {
-      key: "REFUND",
-      label: "환급 후보",
-      count: summary.refundCount,
-    },
-    {
-      key: "ALL",
-      label: "전체",
-      count: summary.total,
-    },
+    { key: "REFUND", label: "환급 후보", count: summary.refundCount },
+    { key: "ALL", label: "현재 페이지 전체", count: summary.total },
   ];
 
   return (
@@ -197,14 +197,17 @@ export default function IssuesTable({ rows }: Props) {
             </div>
 
             <p className="text-sm leading-6 text-slate-700">
-              총 <span className="font-semibold text-slate-900">{summary.total}건</span>의
-              이슈 중{" "}
+              전체 이슈는{" "}
+              <span className="font-semibold text-slate-900">
+                {totalElements.toLocaleString()}건
+              </span>
+              이고, 현재 페이지에서는{" "}
               <span className="font-semibold text-rose-600">
-                실제 확인이 필요한 건 {summary.actionRequiredCount}건
+                확인 필요 {summary.actionRequiredCount}건
               </span>
               ,{" "}
               <span className="font-semibold text-blue-600">
-                설명 가능한 차이 {summary.explainableCount}건
+                설명 가능 {summary.explainableCount}건
               </span>
               ,{" "}
               <span className="font-semibold text-emerald-600">
@@ -214,7 +217,7 @@ export default function IssuesTable({ rows }: Props) {
             </p>
 
             <p className="text-xs text-slate-500">
-              설정한 옵션을 기준으로 정책성 차이와 실제 확인이 필요한 이슈를 구분했습니다.
+              상단 분류 수치는 현재 페이지 기준입니다.
             </p>
           </div>
 
@@ -273,7 +276,7 @@ export default function IssuesTable({ rows }: Props) {
                   colSpan={6}
                   className="px-4 py-10 text-center text-sm text-slate-500"
                 >
-                  현재 필터에 해당하는 이슈가 없습니다.
+                  현재 페이지에서 선택한 필터에 해당하는 이슈가 없습니다.
                 </td>
               </tr>
             ) : (
@@ -354,6 +357,32 @@ export default function IssuesTable({ rows }: Props) {
             )}
           </tbody>
         </table>
+      </div>
+
+      <div className="flex items-center justify-between rounded-xl border bg-white px-4 py-3">
+        <p className="text-xs text-slate-500">
+          총 {totalElements.toLocaleString()}건 · {page + 1} /{" "}
+          {Math.max(totalPages, 1)} 페이지
+        </p>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={loading || page === 0}
+            onClick={() => onPageChange(page - 1)}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            이전
+          </button>
+          <button
+            type="button"
+            disabled={loading || !hasNext}
+            onClick={() => onPageChange(page + 1)}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            다음
+          </button>
+        </div>
       </div>
     </div>
   );

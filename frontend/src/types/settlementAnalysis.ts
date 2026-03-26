@@ -150,11 +150,20 @@ export type DailyRow = {
   preferredFeeRefundAmount: number | null;
   createdAt: string;
 };
-
 export type MonthlyRow = {
-  month: string;
+  yearMonth: string;
   settlementAmount: number;
-  orderCount: number;
+  generalSettlementAmount: number;
+  fastSettlementAmount: number;
+  settlementBaseAmount: number;
+  totalFeeAmount: number;
+  benefitSettlementAmount: number;
+  dailyDeductionRefundAmount: number;
+  holdAmount: number;
+  bizWalletOffsetAmount: number;
+  safeReturnCareCost: number;
+  preferredFeeRefundAmount: number;
+  rowCount: number;
 };
 
 export type OrderRow = {
@@ -218,3 +227,35 @@ export type WorkspaceSaveResponse = {
   analysisSetId: number;
 };
 
+
+export type PagedResponse<T> = {
+  items: T[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  hasNext: boolean;
+};
+
+
+
+export type SettlementRunSummaryResponse = {
+  dailyCount: number;
+  monthlyCount: number;
+  orderCount: number;
+  feeCount: number;
+  snapshotCount: number;
+  issueCount: number;
+
+  settlementAmount: number;
+  generalSettlementAmount: number;
+  fastSettlementAmount: number;
+  settlementBaseAmount: number;
+  totalFeeAmount: number;
+  benefitSettlementAmount: number;
+  dailyDeductionRefundAmount: number;
+  holdAmount: number;
+  bizWalletOffsetAmount: number;
+  safeReturnCareCost: number;
+  preferredFeeRefundAmount: number;
+};
