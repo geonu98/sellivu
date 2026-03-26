@@ -22,6 +22,7 @@ public class SettlementIssueBuildService {
 
     private static final int ISSUE_CHUNK_SIZE = 1000;
     private static final int SNAPSHOT_UPDATE_CHUNK_SIZE = 1000;
+    private static final int PROGRESS_LOG_EVERY_N_CHUNKS = 20;
 
     private final SettlementOrderSnapshotRepository settlementOrderSnapshotRepository;
     private final SettlementIssueBuildStepService settlementIssueBuildStepService;
@@ -60,55 +61,39 @@ public class SettlementIssueBuildService {
                 System.currentTimeMillis() - buildStartedAt
         );
 
-        long issueSaveStartedAt = System.currentTimeMillis();
+        long issueInsertStartedAt = System.currentTimeMillis();
         int insertedCount = 0;
+        int issueChunkCount = 0;
 
         for (int start = 0; start < issues.size(); start += ISSUE_CHUNK_SIZE) {
             int end = Math.min(start + ISSUE_CHUNK_SIZE, issues.size());
             List<SettlementIssue> chunk = issues.subList(start, end);
 
-            long chunkStartedAt = System.currentTimeMillis();
             settlementIssueBuildStepService.insertIssueChunk(chunk);
-            insertedCount += chunk.size();
 
-            log.info("[PERF] issue chunk insert runId={} start={} end={} size={} took={}ms",
-                    runId,
-                    start,
-                    end,
-                    chunk.size(),
-                    System.currentTimeMillis() - chunkStartedAt
-            );
+            insertedCount += chunk.size();
+            issueChunkCount++;
+
+            if (issueChunkCount == 1
+                    || end == issues.size()
+                    || issueChunkCount % PROGRESS_LOG_EVERY_N_CHUNKS == 0) {
+                log.info("[PERF] issue batch insert progress runId={} chunkIndex={} inserted={} total={}",
+                        runId, issueChunkCount, insertedCount, issues.size());
+            }
         }
 
-        log.info("[PERF] issue batch insert runId={} issues={} took={}ms",
+        log.info("[PERF] issue batch insert total runId={} issues={} chunkSize={} chunkCount={} took={}ms",
                 runId,
                 insertedCount,
-                System.currentTimeMillis() - issueSaveStartedAt
+                ISSUE_CHUNK_SIZE,
+                issueChunkCount,
+                System.currentTimeMillis() - issueInsertStartedAt
         );
 
         long issueCountUpdateStartedAt = System.currentTimeMillis();
-        int updatedSnapshotCount = 0;
-
-        for (int start = 0; start < snapshots.size(); start += SNAPSHOT_UPDATE_CHUNK_SIZE) {
-            int end = Math.min(start + SNAPSHOT_UPDATE_CHUNK_SIZE, snapshots.size());
-            List<SettlementOrderSnapshot> chunk = snapshots.subList(start, end);
-
-            long chunkStartedAt = System.currentTimeMillis();
-            settlementIssueBuildStepService.updateSnapshotIssueCountChunk(runId, chunk);
-            updatedSnapshotCount += chunk.size();
-
-            log.info("[PERF] snapshot issueCount chunk update runId={} start={} end={} size={} took={}ms",
-                    runId,
-                    start,
-                    end,
-                    chunk.size(),
-                    System.currentTimeMillis() - chunkStartedAt
-            );
-        }
-
-        log.info("[PERF] snapshot issueCount batch update runId={} snapshots={} took={}ms",
+        settlementIssueBuildStepService.rebuildSnapshotIssueCounts(runId);
+        log.info("[PERF] snapshot issueCount batch update total runId={} took={}ms",
                 runId,
-                updatedSnapshotCount,
                 System.currentTimeMillis() - issueCountUpdateStartedAt
         );
 

@@ -13,9 +13,10 @@ import java.time.LocalDateTime;
 @Table(
         name = "settlement_issue",
         indexes = {
-                @Index(name = "idx_issue_snapshot_id", columnList = "snapshotId"),
-                @Index(name = "idx_issue_type", columnList = "issueType"),
-                @Index(name = "idx_issue_resolved", columnList = "resolved")
+                @Index(name = "idx_issue_snapshot_id", columnList = "snapshot_id"),
+                @Index(name = "idx_issue_type", columnList = "issue_type"),
+                @Index(name = "idx_issue_resolved", columnList = "resolved"),
+                @Index(name = "idx_issue_run_id_snapshot_id", columnList = "run_id, snapshot_id")
         }
 )
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -28,10 +29,11 @@ public class SettlementIssue {
     @Column(name = "run_id")
     private Long runId;
 
+    @Column(name = "snapshot_id")
     private Long snapshotId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 50)
+    @Column(name = "issue_type", nullable = false, length = 50)
     private SettlementIssueType issueType;
 
     @Column(length = 100)

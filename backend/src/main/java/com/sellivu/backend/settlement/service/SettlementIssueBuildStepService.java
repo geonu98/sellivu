@@ -1,7 +1,6 @@
 package com.sellivu.backend.settlement.service;
 
 import com.sellivu.backend.settlement.domain.SettlementIssue;
-import com.sellivu.backend.settlement.domain.SettlementOrderSnapshot;
 import com.sellivu.backend.settlement.repository.SettlementIssueRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -32,10 +31,7 @@ public class SettlementIssueBuildStepService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void updateSnapshotIssueCountChunk(Long runId, List<SettlementOrderSnapshot> snapshots) {
-        if (snapshots == null || snapshots.isEmpty()) {
-            return;
-        }
-        settlementOrderSnapshotIssueCountBatchUpdater.updateIssueCounts(runId, snapshots);
+    public void rebuildSnapshotIssueCounts(Long runId) {
+        settlementOrderSnapshotIssueCountBatchUpdater.rebuildIssueCounts(runId);
     }
 }
