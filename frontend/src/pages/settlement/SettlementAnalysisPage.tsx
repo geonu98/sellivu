@@ -49,6 +49,7 @@ import type {
 import { buildTabs, type TabKey } from "../../utils/settlementTab";
 import { getApiErrorMessage } from "../../utils/apiError";
 import { useAuthStore } from "../../store/authStore";
+import { BarChart3 } from "lucide-react";
 
 const WORKSPACE_SESSION_KEY = "sellivu-workspace-session";
 
@@ -123,7 +124,13 @@ function KpiCard({
 }: {
   label: string;
   value: number;
-  tone?: "blue" | "emerald" | "amber" | "rose";
+  tone?:
+    | "blue"
+    | "emerald"
+    | "amber"
+    | "rose"
+    | "indigo"
+    | "violet";
   icon: ReactNode;
 }) {
   const toneClass = {
@@ -146,6 +153,16 @@ function KpiCard({
       wrap: "bg-rose-50 text-rose-700 border-rose-100",
       icon: "bg-rose-100 text-rose-700",
       value: "text-rose-700",
+    },
+    indigo: {
+      wrap: "bg-indigo-50 text-indigo-700 border-indigo-100",
+      icon: "bg-indigo-100 text-indigo-700",
+      value: "text-indigo-700",
+    },
+    violet: {
+      wrap: "bg-violet-50 text-violet-700 border-violet-100",
+      icon: "bg-violet-100 text-violet-700",
+      value: "text-violet-700",
     },
   }[tone];
 
@@ -338,6 +355,27 @@ function SettlementContextSummaryCard({
   );
 }
 
+function CalendarIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <path d="M8 3v3M16 3v3" strokeLinecap="round" />
+      <rect x="4" y="5" width="16" height="15" rx="2" />
+      <path d="M4 9h16" strokeLinecap="round" />
+      <path
+        d="M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01M16 17h.01"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+
 function IssueIcon({ className = "h-5 w-5" }: { className?: string }) {
   return (
     <svg
@@ -515,6 +553,11 @@ export default function SettlementAnalysisPage() {
 
   const [hasUnsavedWorkspaceChanges, setHasUnsavedWorkspaceChanges] =
     useState(false);
+
+    const [uploadingFileType, setUploadingFileType] =
+  useState<SettlementFileType | null>(null);
+const [runningFileType, setRunningFileType] =
+  useState<SettlementFileType | null>(null);
 
   const workspaceFiles = (workspace?.files ?? []).filter((file) => file.active);
   const isActiveWorkspace = workspace?.status === "ACTIVE";
@@ -987,46 +1030,69 @@ export default function SettlementAnalysisPage() {
 async function handleUploadFile(file: File, fileType: SettlementFileType) {
   if (!workspaceSession || isViewingSavedAnalysis) return;
 
+  const currentSession = workspaceSession;
+
   setErrorMessage(null);
+  setUploadingFileType(fileType);
   setSuspendAutoResultFetch(true);
 
-  console.time(`1.upload_total_${fileType}`);
+  let refreshedWorkspace: WorkspaceResponse | null = null;
+
   try {
     console.time(`1-1.upload_api_${fileType}`);
     await uploadWorkspaceFile(
-      workspaceSession.workspaceKey,
-      workspaceSession.workspaceToken,
+      currentSession.workspaceKey,
+      currentSession.workspaceToken,
       file,
       fileType
     );
     console.timeEnd(`1-1.upload_api_${fileType}`);
 
     console.time(`1-2.refresh_after_upload_${fileType}`);
-    const refreshedWorkspace = await refreshWorkspace(workspaceSession, {
+    refreshedWorkspace = await refreshWorkspace(currentSession, {
       skipResultData: true,
     });
     console.timeEnd(`1-2.refresh_after_upload_${fileType}`);
 
+    setHasUnsavedWorkspaceChanges(true);
+  } catch (error) {
+    setErrorMessage(getApiErrorMessage(error));
+    throw error;
+  } finally {
+    setUploadingFileType(null);
+    setSuspendAutoResultFetch(false);
+  }
+
+  void runAnalysisAfterUpload(currentSession, fileType, refreshedWorkspace);
+}
+
+async function runAnalysisAfterUpload(
+  session: WorkspaceSession,
+  fileType: SettlementFileType,
+  refreshedWorkspace: WorkspaceResponse | null
+) {
+  setRunningFileType(fileType);
+
+  try {
     console.time(`1-3.start_run_${fileType}`);
     await runActiveWorkspaceAnalysis(
-      workspaceSession.workspaceKey,
-      workspaceSession.workspaceToken,
+      session.workspaceKey,
+      session.workspaceToken,
       refreshedWorkspace
     );
     console.timeEnd(`1-3.start_run_${fileType}`);
 
     console.time(`1-4.refresh_after_run_${fileType}`);
-    await refreshWorkspace(workspaceSession);
+    await refreshWorkspace(session);
     console.timeEnd(`1-4.refresh_after_run_${fileType}`);
-
-    setHasUnsavedWorkspaceChanges(true);
   } catch (error) {
     setErrorMessage(getApiErrorMessage(error));
   } finally {
-    setSuspendAutoResultFetch(false);
-    console.timeEnd(`1.upload_total_${fileType}`);
+    setRunningFileType(null);
   }
 }
+
+
 
   async function handleRemoveFile(workspaceFileId: number) {
     if (!workspaceSession || isViewingSavedAnalysis) return;
@@ -1712,11 +1778,12 @@ return (
 
                         <div className="min-h-[420px]">
                           <SettlementUploadSection
-                            disabled={
-                              !isActiveWorkspace || isViewingSavedAnalysis
-                            }
-                            onUpload={handleUploadFile}
-                          />
+  disabled={!isActiveWorkspace || isViewingSavedAnalysis}
+  uploadingFileType={uploadingFileType}
+  runningFileType={runningFileType}
+  onUpload={handleUploadFile}
+/>
+  
                         </div>
                       </section>
 
@@ -1830,36 +1897,54 @@ return (
                   </div>
                 </div>
 
-                <div className="mb-3 grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-                  <KpiCard
-                    label="발견된 이슈"
-                    value={summaryState?.issueCount ?? issuesState.totalElements}
-                    tone={
-                      (summaryState?.issueCount ?? issuesState.totalElements) > 0
-                        ? "rose"
-                        : "blue"
-                    }
-                    icon={<IssueIcon />}
-                  />
-                  <KpiCard
-                    label="검증 완료"
-                    value={summaryState?.snapshotCount ?? snapshotsState.totalElements}
-                    tone="emerald"
-                    icon={<CheckIcon />}
-                  />
-                  <KpiCard
-                    label="주문 상세"
-                    value={summaryState?.orderCount ?? ordersState.totalElements}
-                    tone="blue"
-                    icon={<SnapshotIcon />}
-                  />
-                  <KpiCard
-                    label="수수료 상세"
-                    value={summaryState?.feeCount ?? feesState.totalElements}
-                    tone="amber"
-                    icon={<AlertIcon />}
-                  />
-                </div>
+                <div className="mb-3 grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+              
+  <KpiCard
+    label="발견된 이슈"
+    value={summaryState?.issueCount ?? issuesState.totalElements}
+    tone={
+      (summaryState?.issueCount ?? issuesState.totalElements) > 0
+        ? "rose"
+        : "blue"
+    }
+    icon={<IssueIcon />}
+  />
+
+  <KpiCard
+    label="검증 완료"
+    value={summaryState?.snapshotCount ?? snapshotsState.totalElements}
+    tone="emerald"
+    icon={<CheckIcon />}
+  />
+
+  <KpiCard
+    label="주문 상세"
+    value={summaryState?.orderCount ?? ordersState.totalElements}
+    tone="blue"
+    icon={<SnapshotIcon />}
+  />
+
+  <KpiCard
+    label="수수료 상세"
+    value={summaryState?.feeCount ?? feesState.totalElements}
+    tone="amber"
+    icon={<AlertIcon />}
+  />
+
+  <KpiCard
+    label="일별 정산"
+    value={summaryState?.dailyCount ?? dailyState.totalElements}
+    tone="indigo"
+    icon={<CalendarIcon />}
+  />
+
+  <KpiCard
+    label="월별 정산"
+    value={summaryState?.monthlyCount ?? monthlyState.length}
+    tone="violet"
+    icon={<BarChart3 className="h-5 w-5" />}
+  />
+              </div>
 
                 <div className="min-h-0 flex-1 rounded-[24px] border border-slate-200 bg-white p-3 shadow-xl shadow-slate-200/60 sm:p-4 xl:rounded-[30px]">
                   <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] border border-slate-100 bg-slate-50/40 sm:rounded-[24px]">

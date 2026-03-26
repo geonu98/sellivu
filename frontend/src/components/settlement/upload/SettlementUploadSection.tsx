@@ -4,6 +4,8 @@ import { FILE_TYPE_LABEL } from "../../../utils/settlementLabels";
 
 type Props = {
   disabled?: boolean;
+  uploadingFileType?: SettlementFileType | null;
+  runningFileType?: SettlementFileType | null;
   onUpload: (file: File, fileType: SettlementFileType) => Promise<void>;
 };
 
@@ -15,9 +17,10 @@ const FILE_TYPES: SettlementFileType[] = [
 
 export default function SettlementUploadSection({
   disabled = false,
+  uploadingFileType = null,
+  runningFileType = null,
   onUpload,
 }: Props) {
-  const [loadingType, setLoadingType] = useState<SettlementFileType | null>(null);
   const [dragActiveType, setDragActiveType] = useState<SettlementFileType | null>(null);
 
   const inputRefs = useRef<Record<SettlementFileType, HTMLInputElement | null>>({
@@ -26,20 +29,15 @@ export default function SettlementUploadSection({
     FEE_DETAIL: null,
   });
 
- 
-async function handleFile(file: File, fileType: SettlementFileType) {
-  console.log("handleFile start", { fileName: file.name, fileType });
-  setLoadingType(fileType);
-  try {
-    await onUpload(file, fileType);
-    console.log("handleFile success");
-  } catch (error) {
-    console.error("handleFile error", error);
-  } finally {
-    setLoadingType(null);
+  async function handleFile(file: File, fileType: SettlementFileType) {
+    console.log("handleFile start", { fileName: file.name, fileType });
+    try {
+      await onUpload(file, fileType);
+      console.log("handleFile success");
+    } catch (error) {
+      console.error("handleFile error", error);
+    }
   }
-}
-
 
   async function handleChange(
     e: React.ChangeEvent<HTMLInputElement>,
@@ -60,30 +58,33 @@ async function handleFile(file: File, fileType: SettlementFileType) {
     setDragActiveType(null);
 
     const file = e.dataTransfer.files?.[0];
-    if (!file || disabled || loadingType) return;
+    if (!file || disabled || uploadingFileType || runningFileType) return;
 
     await handleFile(file, fileType);
   }
+
+  const hasBusyState = uploadingFileType !== null || runningFileType !== null;
 
   return (
     <div className="flex h-full flex-col gap-4">
       {FILE_TYPES.map((fileType) => {
         const dragActive = dragActiveType === fileType;
-        const loading = loadingType === fileType;
+        const uploading = uploadingFileType === fileType;
+        const running = runningFileType === fileType;
 
         return (
           <div
             key={fileType}
             onDragOver={(e) => {
               e.preventDefault();
-              if (!disabled && !loadingType) {
+              if (!disabled && !hasBusyState) {
                 setDragActiveType(fileType);
               }
             }}
             onDragLeave={() => setDragActiveType(null)}
             onDrop={(e) => void handleDrop(e, fileType)}
             onClick={() => {
-              if (!disabled && !loadingType) {
+              if (!disabled && !hasBusyState) {
                 inputRefs.current[fileType]?.click();
               }
             }}
@@ -91,7 +92,9 @@ async function handleFile(file: File, fileType: SettlementFileType) {
               dragActive
                 ? "border-blue-500 bg-blue-50"
                 : "border-slate-300 bg-white hover:border-slate-400 hover:bg-slate-50"
-            } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
+            } ${disabled || hasBusyState ? "cursor-not-allowed" : ""} ${
+              disabled ? "opacity-60" : ""
+            }`}
           >
             <input
               ref={(el) => {
@@ -99,7 +102,7 @@ async function handleFile(file: File, fileType: SettlementFileType) {
               }}
               type="file"
               className="hidden"
-              disabled={disabled || loadingType !== null}
+              disabled={disabled || hasBusyState}
               onChange={(e) => void handleChange(e, fileType)}
             />
 
@@ -117,9 +120,15 @@ async function handleFile(file: File, fileType: SettlementFileType) {
                 </div>
               </div>
 
-              {loading && (
+              {uploading && (
                 <div className="shrink-0 rounded-full bg-blue-100 px-3 py-1.5 text-[11px] font-bold text-blue-700">
                   업로드 중
+                </div>
+              )}
+
+              {!uploading && running && (
+                <div className="shrink-0 rounded-full bg-amber-100 px-3 py-1.5 text-[11px] font-bold text-amber-700">
+                  분석 중
                 </div>
               )}
             </div>
