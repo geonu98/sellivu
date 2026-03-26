@@ -9,52 +9,74 @@ import jakarta.transaction.Transactional;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+@Slf4j
 @Service
 public class SettlementUploadService {
 
     private final SettlementUploadRepository settlementUploadRepository;
     private final SettlementUploadStorage settlementUploadStorage;
     private final SettlementParseFacade settlementParseFacade;
-    private final SettlementRowPersistenceService settlementRowPersistenceService;
-    private final SettlementOrderSnapshotService settlementOrderSnapshotService;
 
     public SettlementUploadService(
             SettlementUploadRepository settlementUploadRepository,
             SettlementUploadStorage settlementUploadStorage,
-            SettlementParseFacade settlementParseFacade,
-            SettlementRowPersistenceService settlementRowPersistenceService,
-            SettlementOrderSnapshotService settlementOrderSnapshotService
+            SettlementParseFacade settlementParseFacade
     ) {
         this.settlementUploadRepository = settlementUploadRepository;
         this.settlementUploadStorage = settlementUploadStorage;
         this.settlementParseFacade = settlementParseFacade;
-        this.settlementRowPersistenceService = settlementRowPersistenceService;
-        this.settlementOrderSnapshotService = settlementOrderSnapshotService;
     }
 
     @Transactional
     public SettlementUploadResponse upload(MultipartFile file) {
-        validateFile(file);
+        long totalStart = System.currentTimeMillis();
 
-        SettlementParseFacade.ParsedSettlementFile parsedFile =
-                settlementParseFacade.parse(file);
+        try {
+            validateFile(file);
 
-        String fileHash = parsedFile.fileHash();
+            long parseStart = System.currentTimeMillis();
+            SettlementParseFacade.ParsedSettlementFile parsedFile =
+                    settlementParseFacade.parse(file);
+            log.info("[PERF] upload.parse originalFileName={} fileType={} took={}ms",
+                    file.getOriginalFilename(),
+                    parsedFile.parseResult().getFileType(),
+                    System.currentTimeMillis() - parseStart
+            );
 
-        settlementUploadRepository.findByFileHash(fileHash)
-                .ifPresent(existing -> {
-                    throw new DuplicateSettlementUploadException(
-                            "이미 분석된 파일입니다. uploadId=" + existing.getId()
-                    );
-                });
+            String fileHash = parsedFile.fileHash();
 
-        SettlementUpload upload = saveAndParseNewUpload(file, parsedFile);
+            long duplicateCheckStart = System.currentTimeMillis();
+            settlementUploadRepository.findByFileHash(fileHash)
+                    .ifPresent(existing -> {
+                        throw new DuplicateSettlementUploadException(
+                                "이미 분석된 파일입니다. uploadId=" + existing.getId()
+                        );
+                    });
+            log.info("[PERF] upload.duplicateCheck fileType={} took={}ms",
+                    parsedFile.parseResult().getFileType(),
+                    System.currentTimeMillis() - duplicateCheckStart
+            );
 
-        return SettlementUploadResponse.from(upload, "정산 파일 업로드 및 파싱이 완료되었습니다.");
+            long saveStart = System.currentTimeMillis();
+            SettlementUpload upload = saveNewUpload(file, parsedFile);
+            log.info("[PERF] upload.saveOnly fileType={} uploadId={} took={}ms",
+                    parsedFile.parseResult().getFileType(),
+                    upload.getId(),
+                    System.currentTimeMillis() - saveStart
+            );
+
+            return SettlementUploadResponse.from(upload, "정산 파일 업로드가 완료되었습니다.");
+        } finally {
+            log.info("[PERF] upload.total originalFileName={} took={}ms",
+                    file != null ? file.getOriginalFilename() : "null",
+                    System.currentTimeMillis() - totalStart
+            );
+        }
     }
 
     @Transactional
@@ -71,14 +93,21 @@ public class SettlementUploadService {
             return existing.get();
         }
 
-        return saveAndParseNewUpload(file, parsedFile);
+        return saveNewUpload(file, parsedFile);
     }
 
-    private SettlementUpload saveAndParseNewUpload(
+    private SettlementUpload saveNewUpload(
             MultipartFile file,
             SettlementParseFacade.ParsedSettlementFile parsedFile
     ) {
+        long totalStart = System.currentTimeMillis();
+
+        long storeStart = System.currentTimeMillis();
         String storedFileName = settlementUploadStorage.store(file);
+        log.info("[PERF] upload.store fileType={} took={}ms",
+                parsedFile.parseResult().getFileType(),
+                System.currentTimeMillis() - storeStart
+        );
 
         SettlementUpload upload = SettlementUpload.uploaded(
                 Objects.requireNonNullElse(file.getOriginalFilename(), "unknown"),
@@ -87,27 +116,28 @@ public class SettlementUploadService {
                 parsedFile.parseResult().getFileType()
         );
 
+        long saveUploadStart = System.currentTimeMillis();
         try {
             settlementUploadRepository.save(upload);
         } catch (DataIntegrityViolationException e) {
             throw new DuplicateSettlementUploadException("이미 분석된 파일입니다.");
         }
+        log.info("[PERF] upload.saveUploadEntity fileType={} uploadId={} took={}ms",
+                parsedFile.parseResult().getFileType(),
+                upload.getId(),
+                System.currentTimeMillis() - saveUploadStart
+        );
 
-        try {
-            upload.markParsing();
+        log.info("[PERF] upload.skipLegacyRowPersistence fileType={} uploadId={}",
+                parsedFile.parseResult().getFileType(),
+                upload.getId()
+        );
 
-            settlementRowPersistenceService.persist(upload.getId(), parsedFile.parseResult());
-
-            settlementOrderSnapshotService.aggregateForUpload(
-                    upload.getId(),
-                    parsedFile.parseResult().getFileType()
-            );
-
-            upload.markParsed();
-        } catch (Exception e) {
-            upload.markFailed(e.getMessage());
-            throw e;
-        }
+        log.info("[PERF] upload.saveNewUpload.total fileType={} uploadId={} took={}ms",
+                parsedFile.parseResult().getFileType(),
+                upload.getId(),
+                System.currentTimeMillis() - totalStart
+        );
 
         return upload;
     }

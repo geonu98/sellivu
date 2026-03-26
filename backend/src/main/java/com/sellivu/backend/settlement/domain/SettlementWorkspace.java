@@ -30,6 +30,9 @@ public class SettlementWorkspace {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "active_run_id")
+    private Long activeRunId;
+
     @Column(name = "workspace_key", nullable = false, length = 36)
     private String workspaceKey;
 
@@ -165,5 +168,9 @@ public class SettlementWorkspace {
 
     public boolean isActive() {
         return this.status == WorkspaceStatus.ACTIVE;
+    }
+
+    public void activateRun(Long runId) {
+        this.activeRunId = runId;
     }
 }

@@ -35,6 +35,16 @@ public class SettlementUploadStorage {
         }
     }
 
+    public InputStream openStream(String storedFileName) {
+        Path targetPath = uploadRootPath.resolve(storedFileName).normalize();
+
+        try {
+            return Files.newInputStream(targetPath, StandardOpenOption.READ);
+        } catch (IOException e) {
+            throw new IllegalStateException("정산 업로드 파일 읽기 중 오류가 발생했습니다. storedFileName=" + storedFileName, e);
+        }
+    }
+
     private void createDirectoryIfNeeded() {
         try {
             Files.createDirectories(uploadRootPath);

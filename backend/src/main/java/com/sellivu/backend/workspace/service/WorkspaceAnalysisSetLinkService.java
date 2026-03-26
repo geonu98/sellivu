@@ -7,7 +7,6 @@ import com.sellivu.backend.settlement.domain.SettlementWorkspaceFile;
 import com.sellivu.backend.settlement.dto.SettlementAnalysisSetResponse;
 import com.sellivu.backend.settlement.repository.SettlementWorkspaceFileRepository;
 import com.sellivu.backend.settlement.repository.SettlementWorkspaceRepository;
-import com.sellivu.backend.settlement.service.SettlementAnalysisRebuildService;
 import com.sellivu.backend.settlement.service.SettlementAnalysisSetService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -25,7 +24,6 @@ public class WorkspaceAnalysisSetLinkService {
     private final SettlementWorkspaceRepository workspaceRepository;
     private final SettlementWorkspaceFileRepository workspaceFileRepository;
     private final SettlementAnalysisSetService settlementAnalysisSetService;
-    private final SettlementAnalysisRebuildService settlementAnalysisRebuildService;
 
     public Long refresh(Long workspaceId) {
         SettlementWorkspace workspace = workspaceRepository.findById(workspaceId)
@@ -50,7 +48,6 @@ public class WorkspaceAnalysisSetLinkService {
             settlementAnalysisSetService.addUploadToSet(analysisSetId, workspaceFile.getUploadId());
         }
 
-        settlementAnalysisRebuildService.rebuildSet(analysisSetId);
         workspace.updateSavedAnalysisSetId(analysisSetId);
 
         return analysisSetId;

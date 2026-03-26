@@ -1,5 +1,6 @@
 package com.sellivu.backend.settlement.dto;
 
+import com.sellivu.backend.settlement.domain.SettlementOrderRaw;
 import com.sellivu.backend.settlement.domain.SettlementOrderRow;
 
 import java.math.BigDecimal;
@@ -79,6 +80,33 @@ public class SettlementOrderRowResponse {
     }
 
     public static SettlementOrderRowResponse from(SettlementOrderRow row) {
+        return new SettlementOrderRowResponse(
+                row.getId(),
+                row.getUploadId(),
+                row.getRowNo(),
+                row.getOrderNo(),
+                row.getProductOrderNo(),
+                row.getSectionType(),
+                row.getProductName(),
+                row.getBuyerName(),
+                row.getPaymentDate(),
+                row.getAmountChangedDate(),
+                row.getSettlementScheduledDate(),
+                row.getSettlementCompletedDate(),
+                row.getSettlementBaseDate(),
+                row.getTaxReportBaseDate(),
+                row.getSettlementStatus(),
+                row.getSettlementBaseAmount(),
+                row.getNpayFeeAmount(),
+                row.getSalesLinkedFeeTotal(),
+                row.getInstallmentFeeAmount(),
+                row.getBenefitAmount(),
+                row.getSettlementExpectedAmount(),
+                row.getContractNo()
+        );
+    }
+
+    public static SettlementOrderRowResponse from(SettlementOrderRaw row) {
         return new SettlementOrderRowResponse(
                 row.getId(),
                 row.getUploadId(),

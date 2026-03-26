@@ -29,6 +29,9 @@ public class SettlementOrderSnapshot {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "run_id")
+    private Long runId;
+
     /**
      * 연결 기준 키
      * PRODUCT_ORDER_NO 우선, 없으면 ORDER_NO fallback
@@ -129,6 +132,7 @@ public class SettlementOrderSnapshot {
 
     @Builder
     private SettlementOrderSnapshot(
+            Long runId,
             String joinKey,
             String orderNo,
             String productOrderNo,
@@ -158,6 +162,7 @@ public class SettlementOrderSnapshot {
             int issueCount,
             LocalDateTime lastAggregatedAt
     ) {
+        this.runId = runId;
         this.joinKey = joinKey;
         this.orderNo = orderNo;
         this.productOrderNo = productOrderNo;
@@ -189,6 +194,7 @@ public class SettlementOrderSnapshot {
     }
 
     public static SettlementOrderSnapshot create(
+            Long runId,
             String joinKey,
             String orderNo,
             String productOrderNo,
@@ -218,6 +224,7 @@ public class SettlementOrderSnapshot {
             int issueCount
     ) {
         return SettlementOrderSnapshot.builder()
+                .runId(runId)
                 .joinKey(joinKey)
                 .orderNo(orderNo)
                 .productOrderNo(productOrderNo)
@@ -300,5 +307,9 @@ public class SettlementOrderSnapshot {
         this.netAmountMatched = netAmountMatched;
         this.issueCount = issueCount;
         this.lastAggregatedAt = LocalDateTime.now();
+    }
+
+    public void updateIssueCount(int issueCount) {
+        this.issueCount = issueCount;
     }
 }

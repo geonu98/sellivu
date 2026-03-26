@@ -1,5 +1,6 @@
 package com.sellivu.backend.settlement.dto;
 
+import com.sellivu.backend.settlement.domain.SettlementDailyRaw;
 import com.sellivu.backend.settlement.domain.SettlementDailyRow;
 
 import java.math.BigDecimal;
@@ -151,5 +152,26 @@ public class SettlementDailyRowResponse {
 
     public String getSettlementMethod() {
         return settlementMethod;
+    }
+    public static SettlementDailyRowResponse from(SettlementDailyRaw row) {
+        return new SettlementDailyRowResponse(
+                row.getId(),
+                row.getUploadId(),
+                row.getRowNo(),
+                row.getSettlementScheduledDate(),
+                row.getSettlementCompletedDate(),
+                row.getSettlementAmount(),
+                row.getGeneralSettlementAmount(),
+                row.getFastSettlementAmount(),
+                row.getSettlementBaseAmount(),
+                row.getTotalFeeAmount(),
+                row.getBenefitSettlementAmount(),
+                row.getDailyDeductionRefundAmount(),
+                row.getHoldAmount(),
+                row.getBizWalletOffsetAmount(),
+                row.getSafeReturnCareCost(),
+                row.getPreferredFeeRefundAmount(),
+                row.getSettlementMethod()
+        );
     }
 }

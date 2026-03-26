@@ -11,8 +11,9 @@ public class SettlementDailyRowMapper {
 
     private final SettlementValueParser valueParser = new SettlementValueParser();
 
-    public SettlementDailyRow map(Long uploadId, SettlementParsedRow row) {
+    public SettlementDailyRow map(Long runId, Long uploadId, SettlementParsedRow row) {
         return new SettlementDailyRow(
+                runId,
                 uploadId,
                 row.getRowNumber(),
                 valueParser.asLocalDate(row.get(StandardSettlementField.SETTLEMENT_SCHEDULED_DATE)),

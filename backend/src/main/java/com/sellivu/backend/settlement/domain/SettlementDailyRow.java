@@ -23,6 +23,9 @@ public class SettlementDailyRow {
     @Column(name = "upload_id", nullable = false)
     private Long uploadId;
 
+    @Column(name = "run_id")
+    private Long runId;
+
     @Column(name = "row_no", nullable = false)
     private Integer rowNo;
 
@@ -72,6 +75,7 @@ public class SettlementDailyRow {
     }
 
     public SettlementDailyRow(
+            Long runId,
             Long uploadId,
             Integer rowNo,
             LocalDate settlementScheduledDate,
@@ -89,6 +93,7 @@ public class SettlementDailyRow {
             BigDecimal preferredFeeRefundAmount,
             String settlementMethod
     ) {
+        this.runId=runId;
         this.uploadId = uploadId;
         this.rowNo = rowNo;
         this.settlementScheduledDate = settlementScheduledDate;
@@ -113,6 +118,10 @@ public class SettlementDailyRow {
 
     public Long getUploadId() {
         return uploadId;
+    }
+
+    public Long getRunId(){
+        return  runId;
     }
 
     public Integer getRowNo() {

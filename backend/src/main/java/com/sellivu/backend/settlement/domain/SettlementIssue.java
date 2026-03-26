@@ -25,6 +25,9 @@ public class SettlementIssue {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "run_id")
+    private Long runId;
+
     private Long snapshotId;
 
     @Enumerated(EnumType.STRING)
@@ -145,5 +148,9 @@ public class SettlementIssue {
 
     public void resolve() {
         this.resolved = true;
+    }
+
+    public void assignRunId(Long runId) {
+        this.runId = runId;
     }
 }

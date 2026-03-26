@@ -12,18 +12,24 @@ import com.sellivu.backend.settlement.repository.SettlementIssueRepository;
 import com.sellivu.backend.settlement.repository.SettlementOrderRowRepository;
 import com.sellivu.backend.settlement.repository.SettlementOrderSnapshotRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class SettlementOrderSnapshotService {
@@ -35,19 +41,221 @@ public class SettlementOrderSnapshotService {
 
     @Transactional
     public void aggregateForUpload(Long uploadId, SettlementFileType fileType) {
+        long totalStart = System.currentTimeMillis();
+
         if (fileType == SettlementFileType.ORDER_SETTLEMENT) {
-            List<SettlementOrderRow> orderRows = orderRowRepository.findAllByUploadId(uploadId);
-            for (SettlementOrderRow orderRow : orderRows) {
-                aggregateByOrderRow(orderRow);
+            long loadStart = System.currentTimeMillis();
+            List<SettlementOrderRow> uploadedOrderRows = orderRowRepository.findAllByUploadId(uploadId);
+            log.info("[PERF] snapshot.loadOrderRows uploadId={} rows={} took={}ms",
+                    uploadId,
+                    uploadedOrderRows.size(),
+                    System.currentTimeMillis() - loadStart
+            );
+
+            long collectStart = System.currentTimeMillis();
+            Set<String> distinctJoinKeys = new LinkedHashSet<>();
+            List<String> productOrderNos = new ArrayList<>();
+            List<String> orderNos = new ArrayList<>();
+            int blankJoinKeyCount = 0;
+
+            for (SettlementOrderRow orderRow : uploadedOrderRows) {
+                String joinKey = resolveJoinKey(orderRow.getProductOrderNo(), orderRow.getOrderNo());
+                if (isBlank(joinKey)) {
+                    blankJoinKeyCount++;
+                    continue;
+                }
+
+                if (distinctJoinKeys.add(joinKey)) {
+                    if (joinKey.startsWith("P:")) {
+                        productOrderNos.add(joinKey.substring(2));
+                    } else if (joinKey.startsWith("O:")) {
+                        orderNos.add(joinKey.substring(2));
+                    }
+                }
             }
+
+            log.info("[PERF] snapshot.collectOrderJoinKeys uploadId={} orderRows={} distinctJoinKeys={} blankJoinKeys={} took={}ms",
+                    uploadId,
+                    uploadedOrderRows.size(),
+                    distinctJoinKeys.size(),
+                    blankJoinKeyCount,
+                    System.currentTimeMillis() - collectStart
+            );
+
+            long preloadStart = System.currentTimeMillis();
+
+            List<SettlementOrderRow> preloadedOrderRows = new ArrayList<>();
+            if (!productOrderNos.isEmpty()) {
+                preloadedOrderRows.addAll(orderRowRepository.findAllByProductOrderNoIn(productOrderNos));
+            }
+            if (!orderNos.isEmpty()) {
+                preloadedOrderRows.addAll(orderRowRepository.findAllByOrderNoIn(orderNos));
+            }
+
+            List<SettlementFeeRow> preloadedFeeRows = new ArrayList<>();
+            if (!productOrderNos.isEmpty()) {
+                preloadedFeeRows.addAll(feeRowRepository.findAllByProductOrderNoIn(productOrderNos));
+            }
+            if (!orderNos.isEmpty()) {
+                preloadedFeeRows.addAll(feeRowRepository.findAllByOrderNoIn(orderNos));
+            }
+
+            List<SettlementOrderSnapshot> preloadedSnapshots =
+                    distinctJoinKeys.isEmpty()
+                            ? List.of()
+                            : snapshotRepository.findAllByJoinKeyIn(new ArrayList<>(distinctJoinKeys));
+
+            log.info("[PERF] snapshot.preloadOrder uploadId={} orderRows={} feeRows={} snapshots={} took={}ms",
+                    uploadId,
+                    preloadedOrderRows.size(),
+                    preloadedFeeRows.size(),
+                    preloadedSnapshots.size(),
+                    System.currentTimeMillis() - preloadStart
+            );
+
+            long mapStart = System.currentTimeMillis();
+
+            Map<String, List<SettlementOrderRow>> orderRowsByJoinKey = buildOrderRowsByJoinKey(preloadedOrderRows);
+            Map<String, List<SettlementFeeRow>> feeRowsByJoinKey = buildFeeRowsByJoinKey(preloadedFeeRows);
+            Map<String, SettlementOrderSnapshot> snapshotByJoinKey = buildSnapshotByJoinKey(preloadedSnapshots);
+
+            log.info("[PERF] snapshot.buildOrderMaps uploadId={} orderJoinKeys={} feeJoinKeys={} snapshotJoinKeys={} took={}ms",
+                    uploadId,
+                    orderRowsByJoinKey.size(),
+                    feeRowsByJoinKey.size(),
+                    snapshotByJoinKey.size(),
+                    System.currentTimeMillis() - mapStart
+            );
+
+            long aggregateStart = System.currentTimeMillis();
+            for (String joinKey : distinctJoinKeys) {
+                rebuildSnapshotByJoinKey(
+                        joinKey,
+                        orderRowsByJoinKey.getOrDefault(joinKey, List.of()),
+                        feeRowsByJoinKey.getOrDefault(joinKey, List.of()),
+                        snapshotByJoinKey.get(joinKey)
+                );
+            }
+
+            log.info("[PERF] snapshot.aggregateOrderDistinctJoinKeys uploadId={} distinctJoinKeys={} took={}ms",
+                    uploadId,
+                    distinctJoinKeys.size(),
+                    System.currentTimeMillis() - aggregateStart
+            );
+
+            log.info("[PERF] snapshot.total uploadId={} fileType={} took={}ms",
+                    uploadId,
+                    fileType,
+                    System.currentTimeMillis() - totalStart
+            );
             return;
         }
 
         if (fileType == SettlementFileType.FEE_DETAIL) {
-            List<SettlementFeeRow> feeRows = feeRowRepository.findAllByUploadId(uploadId);
-            for (SettlementFeeRow feeRow : feeRows) {
-                aggregateByFeeRow(feeRow);
+            long loadStart = System.currentTimeMillis();
+            List<SettlementFeeRow> uploadedFeeRows = feeRowRepository.findAllByUploadId(uploadId);
+            log.info("[PERF] snapshot.loadFeeRows uploadId={} rows={} took={}ms",
+                    uploadId,
+                    uploadedFeeRows.size(),
+                    System.currentTimeMillis() - loadStart
+            );
+
+            long collectStart = System.currentTimeMillis();
+            Set<String> distinctJoinKeys = new LinkedHashSet<>();
+            List<String> productOrderNos = new ArrayList<>();
+            List<String> orderNos = new ArrayList<>();
+            int blankJoinKeyCount = 0;
+
+            for (SettlementFeeRow feeRow : uploadedFeeRows) {
+                String joinKey = resolveJoinKey(feeRow.getProductOrderNo(), feeRow.getOrderNo());
+                if (isBlank(joinKey)) {
+                    blankJoinKeyCount++;
+                    continue;
+                }
+
+                if (distinctJoinKeys.add(joinKey)) {
+                    if (joinKey.startsWith("P:")) {
+                        productOrderNos.add(joinKey.substring(2));
+                    } else if (joinKey.startsWith("O:")) {
+                        orderNos.add(joinKey.substring(2));
+                    }
+                }
             }
+
+            log.info("[PERF] snapshot.collectFeeJoinKeys uploadId={} feeRows={} distinctJoinKeys={} blankJoinKeys={} took={}ms",
+                    uploadId,
+                    uploadedFeeRows.size(),
+                    distinctJoinKeys.size(),
+                    blankJoinKeyCount,
+                    System.currentTimeMillis() - collectStart
+            );
+
+            long preloadStart = System.currentTimeMillis();
+
+            List<SettlementOrderRow> preloadedOrderRows = new ArrayList<>();
+            if (!productOrderNos.isEmpty()) {
+                preloadedOrderRows.addAll(orderRowRepository.findAllByProductOrderNoIn(productOrderNos));
+            }
+            if (!orderNos.isEmpty()) {
+                preloadedOrderRows.addAll(orderRowRepository.findAllByOrderNoIn(orderNos));
+            }
+
+            List<SettlementFeeRow> preloadedFeeRows = new ArrayList<>();
+            if (!productOrderNos.isEmpty()) {
+                preloadedFeeRows.addAll(feeRowRepository.findAllByProductOrderNoIn(productOrderNos));
+            }
+            if (!orderNos.isEmpty()) {
+                preloadedFeeRows.addAll(feeRowRepository.findAllByOrderNoIn(orderNos));
+            }
+
+            List<SettlementOrderSnapshot> preloadedSnapshots =
+                    distinctJoinKeys.isEmpty()
+                            ? List.of()
+                            : snapshotRepository.findAllByJoinKeyIn(new ArrayList<>(distinctJoinKeys));
+
+            log.info("[PERF] snapshot.preloadFee uploadId={} orderRows={} feeRows={} snapshots={} took={}ms",
+                    uploadId,
+                    preloadedOrderRows.size(),
+                    preloadedFeeRows.size(),
+                    preloadedSnapshots.size(),
+                    System.currentTimeMillis() - preloadStart
+            );
+
+            long mapStart = System.currentTimeMillis();
+
+            Map<String, List<SettlementOrderRow>> orderRowsByJoinKey = buildOrderRowsByJoinKey(preloadedOrderRows);
+            Map<String, List<SettlementFeeRow>> feeRowsByJoinKey = buildFeeRowsByJoinKey(preloadedFeeRows);
+            Map<String, SettlementOrderSnapshot> snapshotByJoinKey = buildSnapshotByJoinKey(preloadedSnapshots);
+
+            log.info("[PERF] snapshot.buildFeeMaps uploadId={} orderJoinKeys={} feeJoinKeys={} snapshotJoinKeys={} took={}ms",
+                    uploadId,
+                    orderRowsByJoinKey.size(),
+                    feeRowsByJoinKey.size(),
+                    snapshotByJoinKey.size(),
+                    System.currentTimeMillis() - mapStart
+            );
+
+            long aggregateStart = System.currentTimeMillis();
+            for (String joinKey : distinctJoinKeys) {
+                rebuildSnapshotByJoinKey(
+                        joinKey,
+                        orderRowsByJoinKey.getOrDefault(joinKey, List.of()),
+                        feeRowsByJoinKey.getOrDefault(joinKey, List.of()),
+                        snapshotByJoinKey.get(joinKey)
+                );
+            }
+
+            log.info("[PERF] snapshot.aggregateFeeDistinctJoinKeys uploadId={} distinctJoinKeys={} took={}ms",
+                    uploadId,
+                    distinctJoinKeys.size(),
+                    System.currentTimeMillis() - aggregateStart
+            );
+
+            log.info("[PERF] snapshot.total uploadId={} fileType={} took={}ms",
+                    uploadId,
+                    fileType,
+                    System.currentTimeMillis() - totalStart
+            );
         }
     }
 
@@ -86,12 +294,67 @@ public class SettlementOrderSnapshotService {
     }
 
     private void rebuildSnapshotByJoinKey(String joinKey) {
+        long totalStart = System.currentTimeMillis();
+
+        long loadOrderStart = System.currentTimeMillis();
         List<SettlementOrderRow> orderRows = findOrderRowsByJoinKey(joinKey);
+        long loadOrderTook = System.currentTimeMillis() - loadOrderStart;
+
+        long loadFeeStart = System.currentTimeMillis();
         List<SettlementFeeRow> feeRows = findFeeRowsByJoinKey(joinKey);
+        long loadFeeTook = System.currentTimeMillis() - loadFeeStart;
 
         if (orderRows.isEmpty() && feeRows.isEmpty()) {
+            log.info("[PERF] snapshot.rebuild joinKey={} orderRows=0 feeRows=0 loadOrder={}ms loadFee={}ms total={}ms",
+                    joinKey,
+                    loadOrderTook,
+                    loadFeeTook,
+                    System.currentTimeMillis() - totalStart
+            );
             return;
         }
+
+        long snapshotLoadStart = System.currentTimeMillis();
+        SettlementOrderSnapshot existingSnapshot = snapshotRepository.findByJoinKey(joinKey).orElse(null);
+        long snapshotLoadTook = System.currentTimeMillis() - snapshotLoadStart;
+
+        long rebuildStart = System.currentTimeMillis();
+        rebuildSnapshotByJoinKey(joinKey, orderRows, feeRows, existingSnapshot);
+        long rebuildTook = System.currentTimeMillis() - rebuildStart;
+
+        long totalTook = System.currentTimeMillis() - totalStart;
+
+        if (totalTook > 300) {
+            log.info("[PERF] snapshot.rebuild joinKey={} orderRows={} feeRows={} loadOrder={}ms loadFee={}ms snapshotLoad={}ms rebuild={}ms total={}ms",
+                    joinKey,
+                    orderRows.size(),
+                    feeRows.size(),
+                    loadOrderTook,
+                    loadFeeTook,
+                    snapshotLoadTook,
+                    rebuildTook,
+                    totalTook
+            );
+        }
+    }
+
+    private void rebuildSnapshotByJoinKey(
+            String joinKey,
+            List<SettlementOrderRow> orderRows,
+            List<SettlementFeeRow> feeRows,
+            SettlementOrderSnapshot existingSnapshot
+    ) {
+        long totalStart = System.currentTimeMillis();
+
+        if (orderRows.isEmpty() && feeRows.isEmpty()) {
+            log.info("[PERF] snapshot.rebuild.cached joinKey={} orderRows=0 feeRows=0 total={}ms",
+                    joinKey,
+                    System.currentTimeMillis() - totalStart
+            );
+            return;
+        }
+
+        long aggregateAmountStart = System.currentTimeMillis();
 
         SettlementOrderRow representativeOrderRow = chooseRepresentativeOrderRow(orderRows).orElse(null);
         SettlementFeeRow representativeFeeRow = chooseRepresentativeFeeRow(feeRows).orElse(null);
@@ -154,6 +417,9 @@ public class SettlementOrderSnapshotService {
                 aggregateFeeSettlementDate(feeRows)
         );
 
+        long aggregateAmountTook = System.currentTimeMillis() - aggregateAmountStart;
+
+        long issueBuildStart = System.currentTimeMillis();
         List<SettlementIssue> issues = buildIssues(
                 representativeOrderRow,
                 joinKey,
@@ -171,37 +437,40 @@ public class SettlementOrderSnapshotService {
                 orderNetAmount,
                 feeNetAmount
         );
+        long issueBuildTook = System.currentTimeMillis() - issueBuildStart;
 
-        SettlementOrderSnapshot snapshot = snapshotRepository.findByJoinKey(joinKey)
-                .orElseGet(() -> SettlementOrderSnapshot.create(
-                        joinKey,
-                        orderNo,
-                        productOrderNo,
-                        matchStatus,
-                        representativeOrderRow != null ? representativeOrderRow.getId() : null,
-                        representativeFeeRow != null ? representativeFeeRow.getId() : null,
-                        representativeOrderRow != null ? representativeOrderRow.getUploadId() : null,
-                        representativeFeeRow != null ? representativeFeeRow.getUploadId() : null,
-                        productName,
-                        optionName,
-                        sellerProductCode,
-                        sellerOptionCode,
-                        paidAt,
-                        settlementDate,
-                        orderSettlementAmount,
-                        orderCommissionAmount,
-                        orderNetAmount,
-                        feeSettlementAmount,
-                        feeCommissionAmount,
-                        feeNetAmount,
-                        resolvedSettlementAmount,
-                        resolvedCommissionAmount,
-                        resolvedNetAmount,
-                        settlementMatched,
-                        commissionMatched,
-                        netMatched || explainableNetDifference,
-                        issues.size()
-                ));
+        SettlementOrderSnapshot snapshot = existingSnapshot != null
+                ? existingSnapshot
+                : SettlementOrderSnapshot.create(
+                        null, //일단 null  runid 없어서
+                joinKey,
+                orderNo,
+                productOrderNo,
+                matchStatus,
+                representativeOrderRow != null ? representativeOrderRow.getId() : null,
+                representativeFeeRow != null ? representativeFeeRow.getId() : null,
+                representativeOrderRow != null ? representativeOrderRow.getUploadId() : null,
+                representativeFeeRow != null ? representativeFeeRow.getUploadId() : null,
+                productName,
+                optionName,
+                sellerProductCode,
+                sellerOptionCode,
+                paidAt,
+                settlementDate,
+                orderSettlementAmount,
+                orderCommissionAmount,
+                orderNetAmount,
+                feeSettlementAmount,
+                feeCommissionAmount,
+                feeNetAmount,
+                resolvedSettlementAmount,
+                resolvedCommissionAmount,
+                resolvedNetAmount,
+                settlementMatched,
+                commissionMatched,
+                netMatched || explainableNetDifference,
+                issues.size()
+        );
 
         if (snapshot.getId() != null) {
             snapshot.update(
@@ -232,9 +501,15 @@ public class SettlementOrderSnapshotService {
             );
         }
 
+        long snapshotSaveStart = System.currentTimeMillis();
         SettlementOrderSnapshot saved = snapshotRepository.save(snapshot);
+        long snapshotSaveTook = System.currentTimeMillis() - snapshotSaveStart;
 
+        long issueDeleteStart = System.currentTimeMillis();
         issueRepository.deleteAllBySnapshotId(saved.getId());
+        long issueDeleteTook = System.currentTimeMillis() - issueDeleteStart;
+
+        long issueSaveStart = System.currentTimeMillis();
         for (SettlementIssue issue : issues) {
             issueRepository.save(
                     SettlementIssue.create(
@@ -247,6 +522,57 @@ public class SettlementOrderSnapshotService {
                     )
             );
         }
+        long issueSaveTook = System.currentTimeMillis() - issueSaveStart;
+
+        long totalTook = System.currentTimeMillis() - totalStart;
+
+        if (totalTook > 100) {
+            log.info("[PERF] snapshot.rebuild.cached joinKey={} orderRows={} feeRows={} issues={} aggregate={}ms buildIssues={}ms snapshotSave={}ms issueDelete={}ms issueSave={}ms total={}ms",
+                    joinKey,
+                    orderRows.size(),
+                    feeRows.size(),
+                    issues.size(),
+                    aggregateAmountTook,
+                    issueBuildTook,
+                    snapshotSaveTook,
+                    issueDeleteTook,
+                    issueSaveTook,
+                    totalTook
+            );
+        }
+    }
+
+    private Map<String, List<SettlementOrderRow>> buildOrderRowsByJoinKey(List<SettlementOrderRow> rows) {
+        Map<String, List<SettlementOrderRow>> result = new HashMap<>();
+        for (SettlementOrderRow row : rows) {
+            String joinKey = resolveJoinKey(row.getProductOrderNo(), row.getOrderNo());
+            if (isBlank(joinKey)) {
+                continue;
+            }
+            result.computeIfAbsent(joinKey, key -> new ArrayList<>()).add(row);
+        }
+        return result;
+    }
+
+    private Map<String, List<SettlementFeeRow>> buildFeeRowsByJoinKey(List<SettlementFeeRow> rows) {
+        Map<String, List<SettlementFeeRow>> result = new HashMap<>();
+        for (SettlementFeeRow row : rows) {
+            String joinKey = resolveJoinKey(row.getProductOrderNo(), row.getOrderNo());
+            if (isBlank(joinKey)) {
+                continue;
+            }
+            result.computeIfAbsent(joinKey, key -> new ArrayList<>()).add(row);
+        }
+        return result;
+    }
+
+    private Map<String, SettlementOrderSnapshot> buildSnapshotByJoinKey(List<SettlementOrderSnapshot> snapshots) {
+        return snapshots.stream()
+                .collect(Collectors.toMap(
+                        SettlementOrderSnapshot::getJoinKey,
+                        Function.identity(),
+                        (a, b) -> a
+                ));
     }
 
     private List<SettlementIssue> buildIssues(
@@ -420,11 +746,6 @@ public class SettlementOrderSnapshotService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    /**
-     * fee 상세는 한 주문에 대해 여러 행이 생기며,
-     * feeBaseAmount는 수수료 항목별로 반복 기재되는 경우가 많다.
-     * 그래서 단순 sum이 아니라 "중복 제거 후 합산"으로 처리한다.
-     */
     private BigDecimal aggregateFeeSettlementAmount(List<SettlementFeeRow> rows) {
         if (rows.isEmpty()) {
             return null;
@@ -549,7 +870,6 @@ public class SettlementOrderSnapshotService {
             result = result.add(orderRow.getNpayFeeAmount());
         }
 
-        // 배송비는 판매수수료(매출연동/판매수수료) 미적용
         if (!isDeliverySection(orderRow) && orderRow.getSalesLinkedFeeTotal() != null) {
             result = result.add(orderRow.getSalesLinkedFeeTotal());
         }
@@ -585,7 +905,6 @@ public class SettlementOrderSnapshotService {
             return false;
         }
 
-        // 배송비는 판매수수료 미적용 + 정산 흐름 차이로 오탐이 잘 날 수 있어 보수적으로 처리
         if (isDeliverySection(representativeOrderRow)) {
             return true;
         }
@@ -600,13 +919,6 @@ public class SettlementOrderSnapshotService {
             return false;
         }
         return "배송비".equals(row.getSectionType().trim());
-    }
-
-    private boolean isProductSection(SettlementOrderRow row) {
-        if (row == null || isBlank(row.getSectionType())) {
-            return false;
-        }
-        return "상품주문".equals(row.getSectionType().trim());
     }
 
     private String buildSectionSuffix(SettlementOrderRow row) {
