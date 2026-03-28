@@ -4,7 +4,7 @@ import com.sellivu.backend.settlement.domain.SettlementWorkspace;
 import com.sellivu.backend.settlement.dto.PageResponse;
 import com.sellivu.backend.settlement.dto.SettlementDailyRowResponse;
 import com.sellivu.backend.settlement.dto.SettlementFeeRowResponse;
-import com.sellivu.backend.settlement.dto.SettlementIssueResponse;
+
 import com.sellivu.backend.settlement.dto.SettlementMonthlySummaryResponse;
 import com.sellivu.backend.settlement.dto.SettlementOrderRowResponse;
 import com.sellivu.backend.settlement.dto.SettlementRunStartResponse;
@@ -98,34 +98,7 @@ public class SettlementRunController {
         return PageResponse.from(result);
     }
 
-    @GetMapping("/{workspaceKey}/active-run/issues")
-    public PageResponse<SettlementIssueResponse> getActiveRunIssues(
-            @PathVariable String workspaceKey,
-            @RequestHeader("X-Workspace-Token") String workspaceToken,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "100") int size
-    ) {
-        long totalStart = System.currentTimeMillis();
 
-        SettlementWorkspace workspace =
-                settlementWorkspaceService.validateAccessibleWorkspace(workspaceKey, workspaceToken);
-
-        Page<SettlementIssueResponse> result = settlementRunQueryService
-                .getActiveRunIssues(workspace.getId(), page, size)
-                .map(SettlementIssueResponse::from);
-
-        log.info(
-                "[PERF] runController.activeIssues workspaceId={} page={} size={} count={} total={} took={}ms",
-                workspace.getId(),
-                page,
-                size,
-                result.getNumberOfElements(),
-                result.getTotalElements(),
-                System.currentTimeMillis() - totalStart
-        );
-
-        return PageResponse.from(result);
-    }
 
     @GetMapping("/{workspaceKey}/active-run/orders")
     public PageResponse<SettlementOrderRowResponse> getActiveRunOrders(

@@ -1,10 +1,12 @@
 package com.sellivu.backend.settlement.parser;
 
+import org.springframework.stereotype.Component;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-
+@Component
 public class SettlementValueParser {
 
     private static final List<DateTimeFormatter> DATE_FORMATTERS = List.of(

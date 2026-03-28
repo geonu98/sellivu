@@ -2,29 +2,34 @@ package com.sellivu.backend.settlement.service;
 
 import com.sellivu.backend.settlement.domain.SettlementOrderSnapshot;
 import lombok.RequiredArgsConstructor;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.postgresql.PGConnection;
+import org.postgresql.copy.CopyManager;
+import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.stereotype.Component;
 
-import java.sql.Date;
-import java.sql.Timestamp;
-import java.sql.Types;
+import javax.sql.DataSource;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Component
 @RequiredArgsConstructor
 public class SettlementOrderSnapshotBatchWriter {
 
-    private static final int BATCH_SIZE = 1000;
-
-    private final JdbcTemplate jdbcTemplate;
+    private final DataSource dataSource;
 
     public void insertBatch(List<SettlementOrderSnapshot> snapshots) {
         if (snapshots == null || snapshots.isEmpty()) {
             return;
         }
 
-        String sql = """
-                INSERT INTO settlement_order_snapshot (
+        String copySql = """
+                COPY settlement_order_snapshot (
                     run_id,
                     join_key,
                     order_no,
@@ -35,9 +40,6 @@ public class SettlementOrderSnapshotBatchWriter {
                     order_upload_id,
                     fee_upload_id,
                     product_name,
-                    option_name,
-                    seller_product_code,
-                    seller_option_code,
                     paid_at,
                     settlement_date,
                     order_settlement_amount,
@@ -52,64 +54,98 @@ public class SettlementOrderSnapshotBatchWriter {
                     settlement_amount_matched,
                     commission_amount_matched,
                     net_amount_matched,
+                    has_issue,
                     issue_count,
+                    issue_mask,
+                    primary_issue_code,
+                    refund_candidate,
+                    needs_user_input,
                     last_aggregated_at
-                ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
+                FROM STDIN WITH (
+                    FORMAT text
                 )
                 """;
 
-        for (int start = 0; start < snapshots.size(); start += BATCH_SIZE) {
-            int end = Math.min(start + BATCH_SIZE, snapshots.size());
-            List<SettlementOrderSnapshot> batch = snapshots.subList(start, end);
+        StringBuilder sb = new StringBuilder(Math.max(1024, snapshots.size() * 220));
 
-            jdbcTemplate.batchUpdate(sql, batch, batch.size(), (ps, item) -> {
-                ps.setObject(1, item.getRunId(), Types.BIGINT);
-                ps.setString(2, item.getJoinKey());
-                ps.setString(3, item.getOrderNo());
-                ps.setString(4, item.getProductOrderNo());
-                ps.setString(5, item.getMatchStatus() != null ? item.getMatchStatus().name() : null);
-                ps.setObject(6, item.getOrderRowId(), Types.BIGINT);
-                ps.setObject(7, item.getFeeRowId(), Types.BIGINT);
-                ps.setObject(8, item.getOrderUploadId(), Types.BIGINT);
-                ps.setObject(9, item.getFeeUploadId(), Types.BIGINT);
-                ps.setString(10, item.getProductName());
-                ps.setString(11, item.getOptionName());
-                ps.setString(12, item.getSellerProductCode());
-                ps.setString(13, item.getSellerOptionCode());
-
-                if (item.getPaidAt() != null) {
-                    ps.setDate(14, Date.valueOf(item.getPaidAt()));
-                } else {
-                    ps.setNull(14, Types.DATE);
-                }
-
-                if (item.getSettlementDate() != null) {
-                    ps.setDate(15, Date.valueOf(item.getSettlementDate()));
-                } else {
-                    ps.setNull(15, Types.DATE);
-                }
-
-                ps.setBigDecimal(16, item.getOrderSettlementAmount());
-                ps.setBigDecimal(17, item.getOrderCommissionAmount());
-                ps.setBigDecimal(18, item.getOrderNetAmount());
-                ps.setBigDecimal(19, item.getFeeSettlementAmount());
-                ps.setBigDecimal(20, item.getFeeCommissionAmount());
-                ps.setBigDecimal(21, item.getFeeNetAmount());
-                ps.setBigDecimal(22, item.getResolvedSettlementAmount());
-                ps.setBigDecimal(23, item.getResolvedCommissionAmount());
-                ps.setBigDecimal(24, item.getResolvedNetAmount());
-                ps.setBoolean(25, item.isSettlementAmountMatched());
-                ps.setBoolean(26, item.isCommissionAmountMatched());
-                ps.setBoolean(27, item.isNetAmountMatched());
-                ps.setInt(28, item.getIssueCount());
-
-                if (item.getLastAggregatedAt() != null) {
-                    ps.setTimestamp(29, Timestamp.valueOf(item.getLastAggregatedAt()));
-                } else {
-                    ps.setNull(29, Types.TIMESTAMP);
-                }
-            });
+        for (SettlementOrderSnapshot item : snapshots) {
+            append(sb, item.getRunId());
+            append(sb, item.getJoinKey());
+            append(sb, item.getOrderNo());
+            append(sb, item.getProductOrderNo());
+            append(sb, item.getMatchStatus() != null ? item.getMatchStatus().name() : null);
+            append(sb, item.getOrderRowId());
+            append(sb, item.getFeeRowId());
+            append(sb, item.getOrderUploadId());
+            append(sb, item.getFeeUploadId());
+            append(sb, item.getProductName());
+            append(sb, item.getPaidAt());
+            append(sb, item.getSettlementDate());
+            append(sb, item.getOrderSettlementAmount());
+            append(sb, item.getOrderCommissionAmount());
+            append(sb, item.getOrderNetAmount());
+            append(sb, item.getFeeSettlementAmount());
+            append(sb, item.getFeeCommissionAmount());
+            append(sb, item.getFeeNetAmount());
+            append(sb, item.getResolvedSettlementAmount());
+            append(sb, item.getResolvedCommissionAmount());
+            append(sb, item.getResolvedNetAmount());
+            append(sb, item.isSettlementAmountMatched());
+            append(sb, item.isCommissionAmountMatched());
+            append(sb, item.isNetAmountMatched());
+            append(sb, item.isHasIssue());
+            append(sb, item.getIssueCount());
+            append(sb, item.getIssueMask());
+            append(sb, item.getPrimaryIssueCode());
+            append(sb, item.isRefundCandidate());
+            append(sb, item.isNeedsUserInput());
+            appendLast(sb, item.getLastAggregatedAt());
         }
+
+        Connection connection = DataSourceUtils.getConnection(dataSource);
+        try (InputStream inputStream = new ByteArrayInputStream(sb.toString().getBytes(StandardCharsets.UTF_8))) {
+            PGConnection pgConnection = connection.unwrap(PGConnection.class);
+            CopyManager copyManager = pgConnection.getCopyAPI();
+            copyManager.copyIn(copySql, inputStream);
+        } catch (Exception e) {
+            throw new RuntimeException("settlement_order_snapshot COPY insert 실패", e);
+        } finally {
+            DataSourceUtils.releaseConnection(connection, dataSource);
+        }
+    }
+
+    private void append(StringBuilder sb, Object value) {
+        appendValue(sb, value);
+        sb.append('\t');
+    }
+
+    private void appendLast(StringBuilder sb, Object value) {
+        appendValue(sb, value);
+        sb.append('\n');
+    }
+
+    private void appendValue(StringBuilder sb, Object value) {
+        if (value == null) {
+            sb.append("\\N");
+            return;
+        }
+        sb.append(escapeCopyText(stringify(value)));
+    }
+
+    private String stringify(Object value) {
+        if (value instanceof BigDecimal bigDecimal) return bigDecimal.toPlainString();
+        if (value instanceof LocalDate localDate) return localDate.toString();
+        if (value instanceof LocalDateTime localDateTime) return localDateTime.toString().replace('T', ' ');
+        if (value instanceof Boolean bool) return bool ? "t" : "f";
+        return String.valueOf(value);
+    }
+
+    private String escapeCopyText(String value) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("\t", "\\t")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
     }
 }

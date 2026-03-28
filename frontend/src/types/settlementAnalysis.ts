@@ -67,6 +67,7 @@ export type RebuildAnalysisResponse = {
   rebuiltUploadCount?: number;
   deletedSnapshotCount?: number;
 };
+
 export type IssueRow = {
   id: number | null;
   sourceType: string;
@@ -106,9 +107,6 @@ export type SnapshotRow = {
   orderUploadId: number | null;
   feeUploadId: number | null;
   productName: string | null;
-  optionName: string | null;
-  sellerProductCode: string | null;
-  sellerOptionCode: string | null;
   paidAt: string | null;
   settlementDate: string | null;
   orderSettlementAmount: number | null;
@@ -123,7 +121,13 @@ export type SnapshotRow = {
   settlementAmountMatched: boolean;
   commissionAmountMatched: boolean;
   netAmountMatched: boolean;
+
+  hasIssue: boolean;
   issueCount: number;
+  issueMask: number;
+  primaryIssueCode: string | null;
+  refundCandidate: boolean;
+  needsUserInput: boolean;
   reviewStatus: string;
   lastAggregatedAt: string;
 };
@@ -150,6 +154,7 @@ export type DailyRow = {
   preferredFeeRefundAmount: number | null;
   createdAt: string;
 };
+
 export type MonthlyRow = {
   yearMonth: string;
   settlementAmount: number;
@@ -227,7 +232,6 @@ export type WorkspaceSaveResponse = {
   analysisSetId: number;
 };
 
-
 export type PagedResponse<T> = {
   items: T[];
   page: number;
@@ -236,8 +240,6 @@ export type PagedResponse<T> = {
   totalPages: number;
   hasNext: boolean;
 };
-
-
 
 export type SettlementRunSummaryResponse = {
   dailyCount: number;

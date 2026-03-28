@@ -4,7 +4,6 @@ import {
   fetchWorkspace,
   fetchWorkspaceDailyRows,
   fetchWorkspaceFeeRows,
-  fetchWorkspaceIssues,
   fetchWorkspaceMonthlyRows,
   fetchWorkspaceOrderRows,
   fetchWorkspaceSnapshots,
@@ -36,7 +35,6 @@ import type {
   AnalysisSetResponse,
   DailyRow,
   FeeRow,
-  IssueRow,
   MonthlyRow,
   OrderRow,
   SettlementFileType,
@@ -52,6 +50,7 @@ import { useAuthStore } from "../../store/authStore";
 import { BarChart3 } from "lucide-react";
 
 const WORKSPACE_SESSION_KEY = "sellivu-workspace-session";
+const DEFAULT_PAGE_SIZE = 100;
 
 function loadWorkspaceSession(): WorkspaceSession | null {
   const raw = sessionStorage.getItem(WORKSPACE_SESSION_KEY);
@@ -375,7 +374,6 @@ function CalendarIcon({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
-
 function IssueIcon({ className = "h-5 w-5" }: { className?: string }) {
   return (
     <svg
@@ -477,8 +475,6 @@ type TabPageState<T> = {
   loaded: boolean;
 };
 
-const DEFAULT_PAGE_SIZE = 100;
-
 function createEmptyTabPageState<T>(
   size: number = DEFAULT_PAGE_SIZE
 ): TabPageState<T> {
@@ -510,8 +506,6 @@ export default function SettlementAnalysisPage() {
     useState<AnalysisCapabilityResponse | null>(null);
   const [context, setContext] = useState<AnalysisContextResponse | null>(null);
 
-  const [issuesState, setIssuesState] =
-    useState<TabPageState<IssueRow>>(createEmptyTabPageState());
   const [snapshotsState, setSnapshotsState] =
     useState<TabPageState<SnapshotRow>>(createEmptyTabPageState());
   const [ordersState, setOrdersState] =
@@ -521,6 +515,7 @@ export default function SettlementAnalysisPage() {
   const [dailyState, setDailyState] =
     useState<TabPageState<DailyRow>>(createEmptyTabPageState());
   const [monthlyState, setMonthlyState] = useState<MonthlyRow[]>([]);
+  const [monthlyLoaded, setMonthlyLoaded] = useState(false);
   const [summaryState, setSummaryState] =
     useState<SettlementRunSummaryResponse | null>(null);
 
@@ -554,10 +549,10 @@ export default function SettlementAnalysisPage() {
   const [hasUnsavedWorkspaceChanges, setHasUnsavedWorkspaceChanges] =
     useState(false);
 
-    const [uploadingFileType, setUploadingFileType] =
-  useState<SettlementFileType | null>(null);
-const [runningFileType, setRunningFileType] =
-  useState<SettlementFileType | null>(null);
+  const [uploadingFileType, setUploadingFileType] =
+    useState<SettlementFileType | null>(null);
+  const [runningFileType, setRunningFileType] =
+    useState<SettlementFileType | null>(null);
 
   const workspaceFiles = (workspace?.files ?? []).filter((file) => file.active);
   const isActiveWorkspace = workspace?.status === "ACTIVE";
@@ -574,14 +569,13 @@ const [runningFileType, setRunningFileType] =
     return (workspaceArg?.files ?? []).some((file) => file.active);
   }
 
-
   function resetPagedResultStates() {
-    setIssuesState(createEmptyTabPageState());
     setSnapshotsState(createEmptyTabPageState());
     setOrdersState(createEmptyTabPageState());
     setFeesState(createEmptyTabPageState());
     setDailyState(createEmptyTabPageState());
     setMonthlyState([]);
+    setMonthlyLoaded(false);
     setSummaryState(null);
   }
 
@@ -597,30 +591,30 @@ const [runningFileType, setRunningFileType] =
   }
 
   async function runActiveWorkspaceAnalysis(
-  workspaceKey: string,
-  workspaceToken: string,
-  workspaceArg?: WorkspaceResponse | null
-) {
-  const dailyUploadId = getActiveUploadId("DAILY_SETTLEMENT", workspaceArg);
-  const orderUploadId = getActiveUploadId("ORDER_SETTLEMENT", workspaceArg);
-  const feeUploadId = getActiveUploadId("FEE_DETAIL", workspaceArg);
-
-  if (
-    dailyUploadId == null &&
-    orderUploadId == null &&
-    feeUploadId == null
+    workspaceKey: string,
+    workspaceToken: string,
+    workspaceArg?: WorkspaceResponse | null
   ) {
-    return;
-  }
+    const dailyUploadId = getActiveUploadId("DAILY_SETTLEMENT", workspaceArg);
+    const orderUploadId = getActiveUploadId("ORDER_SETTLEMENT", workspaceArg);
+    const feeUploadId = getActiveUploadId("FEE_DETAIL", workspaceArg);
 
-  await startWorkspaceRun(
-    workspaceKey,
-    workspaceToken,
-    dailyUploadId,
-    orderUploadId,
-    feeUploadId
-  );
-}
+    if (
+      dailyUploadId == null &&
+      orderUploadId == null &&
+      feeUploadId == null
+    ) {
+      return;
+    }
+
+    await startWorkspaceRun(
+      workspaceKey,
+      workspaceToken,
+      dailyUploadId,
+      orderUploadId,
+      feeUploadId
+    );
+  }
 
   async function fetchActiveTabData(
     tab: TabKey,
@@ -632,33 +626,7 @@ const [runningFileType, setRunningFileType] =
     const availableViews =
       capabilityRes?.availableViews ?? capability?.availableViews ?? [];
 
-    if (tab === "OVERVIEW" || tab === "ISSUES") {
-      if (!availableViews.includes("ISSUES")) {
-        setIssuesState(createEmptyTabPageState());
-        return;
-      }
-
-      const nextPage = page ?? 0;
-      const size = issuesState.size || DEFAULT_PAGE_SIZE;
-
-      setIssuesState((prev) => ({ ...prev, loading: true }));
-
-      const res = await fetchWorkspaceIssues(
-        workspaceKey,
-        workspaceToken,
-        nextPage,
-        size
-      );
-
-      setIssuesState({
-        ...res,
-        loading: false,
-        loaded: true,
-      });
-      return;
-    }
-
-    if (tab === "SNAPSHOTS") {
+    if (tab === "OVERVIEW" || tab === "ISSUES" || tab === "SNAPSHOTS") {
       const canFetchSnapshots =
         availableViews.includes("ORDER_FEE_CROSS_CHECK") ||
         availableViews.includes("ORDER_DETAIL") ||
@@ -781,6 +749,7 @@ const [runningFileType, setRunningFileType] =
     if (tab === "MONTHLY") {
       if (!availableViews.includes("MONTHLY")) {
         setMonthlyState([]);
+        setMonthlyLoaded(true);
         return;
       }
 
@@ -790,7 +759,7 @@ const [runningFileType, setRunningFileType] =
       );
 
       setMonthlyState(res);
-      return;
+      setMonthlyLoaded(true);
     }
   }
 
@@ -1027,7 +996,7 @@ const [runningFileType, setRunningFileType] =
     }
   }
 
-async function handleUploadFile(file: File, fileType: SettlementFileType) {
+  async function handleUploadFile(file: File, fileType: SettlementFileType) {
   if (!workspaceSession || isViewingSavedAnalysis) return;
 
   const currentSession = workspaceSession;
@@ -1055,6 +1024,8 @@ async function handleUploadFile(file: File, fileType: SettlementFileType) {
     console.timeEnd(`1-2.refresh_after_upload_${fileType}`);
 
     setHasUnsavedWorkspaceChanges(true);
+
+    await runAnalysisAfterUpload(currentSession, fileType, refreshedWorkspace);
   } catch (error) {
     setErrorMessage(getApiErrorMessage(error));
     throw error;
@@ -1062,37 +1033,33 @@ async function handleUploadFile(file: File, fileType: SettlementFileType) {
     setUploadingFileType(null);
     setSuspendAutoResultFetch(false);
   }
-
-  void runAnalysisAfterUpload(currentSession, fileType, refreshedWorkspace);
 }
 
-async function runAnalysisAfterUpload(
-  session: WorkspaceSession,
-  fileType: SettlementFileType,
-  refreshedWorkspace: WorkspaceResponse | null
-) {
-  setRunningFileType(fileType);
+  async function runAnalysisAfterUpload(
+    session: WorkspaceSession,
+    fileType: SettlementFileType,
+    refreshedWorkspace: WorkspaceResponse | null
+  ) {
+    setRunningFileType(fileType);
 
-  try {
-    console.time(`1-3.start_run_${fileType}`);
-    await runActiveWorkspaceAnalysis(
-      session.workspaceKey,
-      session.workspaceToken,
-      refreshedWorkspace
-    );
-    console.timeEnd(`1-3.start_run_${fileType}`);
+    try {
+      console.time(`1-3.start_run_${fileType}`);
+      await runActiveWorkspaceAnalysis(
+        session.workspaceKey,
+        session.workspaceToken,
+        refreshedWorkspace
+      );
+      console.timeEnd(`1-3.start_run_${fileType}`);
 
-    console.time(`1-4.refresh_after_run_${fileType}`);
-    await refreshWorkspace(session);
-    console.timeEnd(`1-4.refresh_after_run_${fileType}`);
-  } catch (error) {
-    setErrorMessage(getApiErrorMessage(error));
-  } finally {
-    setRunningFileType(null);
+      console.time(`1-4.refresh_after_run_${fileType}`);
+      await refreshWorkspace(session);
+      console.timeEnd(`1-4.refresh_after_run_${fileType}`);
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error));
+    } finally {
+      setRunningFileType(null);
+    }
   }
-}
-
-
 
   async function handleRemoveFile(workspaceFileId: number) {
     if (!workspaceSession || isViewingSavedAnalysis) return;
@@ -1376,7 +1343,7 @@ async function runAnalysisAfterUpload(
       return;
     }
 
-    initializeWorkspace();
+    void initializeWorkspace();
   }, [isAuthInitialized, isAuthenticated, accessToken, skipAutoInitOnce]);
 
   useEffect(() => {
@@ -1389,7 +1356,7 @@ async function runAnalysisAfterUpload(
       return;
     }
 
-    refreshAnalysisSets();
+    void refreshAnalysisSets();
   }, [isAuthInitialized, isAuthenticated]);
 
   const tabs = useMemo(
@@ -1402,82 +1369,70 @@ async function runAnalysisAfterUpload(
       setActiveTab("OVERVIEW");
     }
   }, [tabs, activeTab]);
-useEffect(() => {
-  if (!workspaceSession || pageLoading || suspendAutoResultFetch) return;
-  if (isViewingSavedAnalysis) return;
 
-  const needIssues =
-    (activeTab === "OVERVIEW" || activeTab === "ISSUES") &&
-    !issuesState.loaded &&
-    !issuesState.loading;
+  useEffect(() => {
+    if (!workspaceSession || pageLoading || suspendAutoResultFetch) return;
+    if (isViewingSavedAnalysis) return;
 
-  const needSnapshots =
-    activeTab === "SNAPSHOTS" &&
-    !snapshotsState.loaded &&
-    !snapshotsState.loading;
+    const needIssueSnapshots =
+      (activeTab === "OVERVIEW" ||
+        activeTab === "ISSUES" ||
+        activeTab === "SNAPSHOTS") &&
+      !snapshotsState.loaded &&
+      !snapshotsState.loading;
 
-  const needOrders =
-    activeTab === "ORDERS" &&
-    !ordersState.loaded &&
-    !ordersState.loading;
+    const needOrders =
+      activeTab === "ORDERS" && !ordersState.loaded && !ordersState.loading;
 
-  const needFees =
-    activeTab === "FEES" &&
-    !feesState.loaded &&
-    !feesState.loading;
+    const needFees =
+      activeTab === "FEES" && !feesState.loaded && !feesState.loading;
 
-  const needDaily =
-    activeTab === "DAILY" &&
-    !dailyState.loaded &&
-    !dailyState.loading;
+    const needDaily =
+      activeTab === "DAILY" && !dailyState.loaded && !dailyState.loading;
 
-  const needMonthly =
-    activeTab === "MONTHLY" &&
-    monthlyState.length === 0;
+    const needMonthly =
+      activeTab === "MONTHLY" && !monthlyLoaded;
 
-  if (
-    !needIssues &&
-    !needSnapshots &&
-    !needOrders &&
-    !needFees &&
-    !needDaily &&
-    !needMonthly
-  ) {
-    return;
-  }
+    if (
+      !needIssueSnapshots &&
+      !needOrders &&
+      !needFees &&
+      !needDaily &&
+      !needMonthly
+    ) {
+      return;
+    }
 
-  fetchActiveTabData(
+    fetchActiveTabData(
+      activeTab,
+      workspaceSession.workspaceKey,
+      workspaceSession.workspaceToken,
+      capability ?? undefined,
+      0
+    ).catch((error) => {
+      setErrorMessage(getApiErrorMessage(error));
+    });
+  }, [
     activeTab,
-    workspaceSession.workspaceKey,
-    workspaceSession.workspaceToken,
-    capability ?? undefined,
-    0
-  ).catch((error) => {
-    setErrorMessage(getApiErrorMessage(error));
-  });
-}, [
-  activeTab,
-  workspaceSession,
-  capability,
-  isViewingSavedAnalysis,
-  pageLoading,
-  suspendAutoResultFetch,
-  issuesState.loaded,
-  issuesState.loading,
-  snapshotsState.loaded,
-  snapshotsState.loading,
-  ordersState.loaded,
-  ordersState.loading,
-  feesState.loaded,
-  feesState.loading,
-  dailyState.loaded,
-  dailyState.loading,
-  monthlyState.length,
-]);
+    workspaceSession,
+    capability,
+    isViewingSavedAnalysis,
+    pageLoading,
+    suspendAutoResultFetch,
+    snapshotsState.loaded,
+    snapshotsState.loading,
+    ordersState.loaded,
+    ordersState.loading,
+    feesState.loaded,
+    feesState.loading,
+    dailyState.loaded,
+    dailyState.loading,
+    monthlyLoaded,
+  ]);
 
   function renderResultContent() {
     if (activeTab === "OVERVIEW" || activeTab === "ISSUES") {
-      if (!issuesState.loading && issuesState.totalElements === 0) {
+      if (!snapshotsState.loading && snapshotsState.totalElements === 0) {
         return (
           <EmptyState
             title="이슈 데이터가 없습니다"
@@ -1487,27 +1442,27 @@ useEffect(() => {
       }
 
       return (
-        <IssuesTable
-          rows={issuesState.items}
-          page={issuesState.page}
-          size={issuesState.size}
-          totalElements={issuesState.totalElements}
-          totalPages={issuesState.totalPages}
-          hasNext={issuesState.hasNext}
-          loading={issuesState.loading}
-          onPageChange={(nextPage: number) => {
-            if (!workspaceSession) return;
-            fetchActiveTabData(
-              "ISSUES",
-              workspaceSession.workspaceKey,
-              workspaceSession.workspaceToken,
-              capability ?? undefined,
-              nextPage
-            ).catch((error) => {
-              setErrorMessage(getApiErrorMessage(error));
-            });
-          }}
-        />
+   <IssuesTable
+  rows={snapshotsState.items}
+  page={snapshotsState.page}
+  size={snapshotsState.size}
+  totalElements={snapshotsState.totalElements}
+  totalPages={snapshotsState.totalPages}
+  hasNext={snapshotsState.hasNext}
+  loading={snapshotsState.loading}
+  onPageChange={(nextPage: number) => {
+    if (!workspaceSession) return;
+    fetchActiveTabData(
+      "ISSUES",
+      workspaceSession.workspaceKey,
+      workspaceSession.workspaceToken,
+      capability ?? undefined,
+      nextPage
+    ).catch((error) => {
+      setErrorMessage(getApiErrorMessage(error));
+    });
+  }}
+/>
       );
     }
 
@@ -1616,60 +1571,60 @@ useEffect(() => {
       );
     }
 
- if (activeTab === "DAILY") {
-  if (!dailyState.loading && dailyState.totalElements === 0) {
+    if (activeTab === "DAILY") {
+      if (!dailyState.loading && dailyState.totalElements === 0) {
+        return (
+          <EmptyState
+            title="일별 정산 데이터가 없습니다"
+            description="일별 정산 업로드 후 active-run 결과가 생성되면 여기에 표시됩니다."
+          />
+        );
+      }
+
+      return (
+        <DailyTable
+          rows={dailyState.items}
+          page={dailyState.page}
+          size={dailyState.size}
+          totalElements={dailyState.totalElements}
+          totalPages={dailyState.totalPages}
+          hasNext={dailyState.hasNext}
+          loading={dailyState.loading}
+          onPageChange={(nextPage: number) => {
+            if (!workspaceSession) return;
+            fetchActiveTabData(
+              "DAILY",
+              workspaceSession.workspaceKey,
+              workspaceSession.workspaceToken,
+              capability ?? undefined,
+              nextPage
+            ).catch((error) => {
+              setErrorMessage(getApiErrorMessage(error));
+            });
+          }}
+        />
+      );
+    }
+
+    if (activeTab === "MONTHLY") {
+      if (monthlyState.length === 0) {
+        return (
+          <EmptyState
+            title="월별 정산 데이터가 없습니다"
+            description="일별 정산 결과를 기준으로 월별 집계가 생성되면 여기에 표시됩니다."
+          />
+        );
+      }
+
+      return <MonthlyTable rows={monthlyState} />;
+    }
+
     return (
       <EmptyState
-        title="일별 정산 데이터가 없습니다"
-        description="일별 정산 업로드 후 active-run 결과가 생성되면 여기에 표시됩니다."
+        title="표시할 데이터가 없습니다"
+        description="업로드 후 결과가 생성되면 이 영역에 검증 리포트가 나타납니다."
       />
     );
-  }
-
-  return (
-    <DailyTable
-      rows={dailyState.items}
-      page={dailyState.page}
-      size={dailyState.size}
-      totalElements={dailyState.totalElements}
-      totalPages={dailyState.totalPages}
-      hasNext={dailyState.hasNext}
-      loading={dailyState.loading}
-      onPageChange={(nextPage: number) => {
-        if (!workspaceSession) return;
-        fetchActiveTabData(
-          "DAILY",
-          workspaceSession.workspaceKey,
-          workspaceSession.workspaceToken,
-          capability ?? undefined,
-          nextPage
-        ).catch((error) => {
-          setErrorMessage(getApiErrorMessage(error));
-        });
-      }}
-    />
-  );
-}
-
-if (activeTab === "MONTHLY") {
-  if (monthlyState.length === 0) {
-    return (
-      <EmptyState
-        title="월별 정산 데이터가 없습니다"
-        description="일별 정산 결과를 기준으로 월별 집계가 생성되면 여기에 표시됩니다."
-      />
-    );
-  }
-
-  return <MonthlyTable rows={monthlyState} />;
-}
-
-return (
-  <EmptyState
-    title="표시할 데이터가 없습니다"
-    description="업로드 후 결과가 생성되면 이 영역에 검증 리포트가 나타납니다."
-  />
-);
   }
 
   const basedAnalysisSetId =
@@ -1692,6 +1647,18 @@ return (
     : "bg-emerald-50 text-emerald-700 border-emerald-200";
 
   const capabilityViews = capability?.availableViews ?? [];
+
+  const discoveredIssueCount =
+    summaryState?.issueCount ??
+    snapshotsState.items.reduce((sum, row) => sum + (row.issueCount ?? 0), 0);
+
+  const verifiedSnapshotCount =
+    summaryState?.snapshotCount ?? snapshotsState.totalElements;
+
+  const orderCount = summaryState?.orderCount ?? ordersState.totalElements;
+  const feeCount = summaryState?.feeCount ?? feesState.totalElements;
+  const dailyCount = summaryState?.dailyCount ?? dailyState.totalElements;
+  const monthlyCount = summaryState?.monthlyCount ?? monthlyState.length;
 
   return (
     <div className="h-screen overflow-hidden bg-[#f8fafc] font-sans text-slate-900">
@@ -1778,12 +1745,11 @@ return (
 
                         <div className="min-h-[420px]">
                           <SettlementUploadSection
-  disabled={!isActiveWorkspace || isViewingSavedAnalysis}
-  uploadingFileType={uploadingFileType}
-  runningFileType={runningFileType}
-  onUpload={handleUploadFile}
-/>
-  
+                            disabled={!isActiveWorkspace || isViewingSavedAnalysis}
+                            uploadingFileType={uploadingFileType}
+                            runningFileType={runningFileType}
+                            onUpload={handleUploadFile}
+                          />
                         </div>
                       </section>
 
@@ -1898,53 +1864,48 @@ return (
                 </div>
 
                 <div className="mb-3 grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-              
-  <KpiCard
-    label="발견된 이슈"
-    value={summaryState?.issueCount ?? issuesState.totalElements}
-    tone={
-      (summaryState?.issueCount ?? issuesState.totalElements) > 0
-        ? "rose"
-        : "blue"
-    }
-    icon={<IssueIcon />}
-  />
+                  <KpiCard
+                    label="발견된 이슈"
+                    value={discoveredIssueCount}
+                    tone={discoveredIssueCount > 0 ? "rose" : "blue"}
+                    icon={<IssueIcon />}
+                  />
 
-  <KpiCard
-    label="검증 완료"
-    value={summaryState?.snapshotCount ?? snapshotsState.totalElements}
-    tone="emerald"
-    icon={<CheckIcon />}
-  />
+                  <KpiCard
+                    label="검증 완료"
+                    value={verifiedSnapshotCount}
+                    tone="emerald"
+                    icon={<CheckIcon />}
+                  />
 
-  <KpiCard
-    label="주문 상세"
-    value={summaryState?.orderCount ?? ordersState.totalElements}
-    tone="blue"
-    icon={<SnapshotIcon />}
-  />
+                  <KpiCard
+                    label="주문 상세"
+                    value={orderCount}
+                    tone="blue"
+                    icon={<SnapshotIcon />}
+                  />
 
-  <KpiCard
-    label="수수료 상세"
-    value={summaryState?.feeCount ?? feesState.totalElements}
-    tone="amber"
-    icon={<AlertIcon />}
-  />
+                  <KpiCard
+                    label="수수료 상세"
+                    value={feeCount}
+                    tone="amber"
+                    icon={<AlertIcon />}
+                  />
 
-  <KpiCard
-    label="일별 정산"
-    value={summaryState?.dailyCount ?? dailyState.totalElements}
-    tone="indigo"
-    icon={<CalendarIcon />}
-  />
+                  <KpiCard
+                    label="일별 정산"
+                    value={dailyCount}
+                    tone="indigo"
+                    icon={<CalendarIcon />}
+                  />
 
-  <KpiCard
-    label="월별 정산"
-    value={summaryState?.monthlyCount ?? monthlyState.length}
-    tone="violet"
-    icon={<BarChart3 className="h-5 w-5" />}
-  />
-              </div>
+                  <KpiCard
+                    label="월별 정산"
+                    value={monthlyCount}
+                    tone="violet"
+                    icon={<BarChart3 className="h-5 w-5" />}
+                  />
+                </div>
 
                 <div className="min-h-0 flex-1 rounded-[24px] border border-slate-200 bg-white p-3 shadow-xl shadow-slate-200/60 sm:p-4 xl:rounded-[30px]">
                   <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] border border-slate-100 bg-slate-50/40 sm:rounded-[24px]">

@@ -2,15 +2,18 @@ package com.sellivu.backend.settlement.service;
 
 import com.sellivu.backend.settlement.domain.SettlementOrderRow;
 import lombok.RequiredArgsConstructor;
-import org.springframework.jdbc.core.BatchPreparedStatementSetter;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.postgresql.PGConnection;
+import org.postgresql.copy.CopyManager;
+import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.stereotype.Component;
 
+import javax.sql.DataSource;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.math.BigDecimal;
-import java.sql.Date;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
-import java.sql.Timestamp;
+import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -18,15 +21,15 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SettlementOrderRawBatchWriter {
 
-    private final JdbcTemplate jdbcTemplate;
+    private final DataSource dataSource;
 
     public int write(Long runId, List<SettlementOrderRow> rows) {
         if (rows == null || rows.isEmpty()) {
             return 0;
         }
 
-        String sql = """
-                INSERT INTO settlement_order_raw (
+        String copySql = """
+                COPY settlement_order_raw (
                     run_id,
                     upload_id,
                     row_no,
@@ -51,49 +54,53 @@ public class SettlementOrderRawBatchWriter {
                     settlement_expected_amount,
                     contract_no,
                     created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                )
+                FROM STDIN WITH (
+                    FORMAT text
+                )
                 """;
 
         LocalDateTime now = LocalDateTime.now();
+        StringBuilder sb = new StringBuilder(Math.max(1024, rows.size() * 220));
 
-        int[] result = jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
-            @Override
-            public void setValues(PreparedStatement ps, int i) throws SQLException {
-                SettlementOrderRow row = rows.get(i);
+        for (SettlementOrderRow row : rows) {
+            append(sb, runId);
+            append(sb, row.getUploadId());
+            append(sb, row.getRowNo());
+            append(sb, buildJoinKey(row.getOrderNo(), row.getProductOrderNo()));
+            append(sb, row.getOrderNo());
+            append(sb, row.getProductOrderNo());
+            append(sb, row.getSectionType());
+            append(sb, row.getProductName());
+            append(sb, row.getBuyerName());
+            append(sb, row.getPaymentDate());
+            append(sb, row.getAmountChangedDate());
+            append(sb, row.getSettlementScheduledDate());
+            append(sb, row.getSettlementCompletedDate());
+            append(sb, row.getSettlementBaseDate());
+            append(sb, row.getTaxReportBaseDate());
+            append(sb, row.getSettlementStatus());
+            append(sb, row.getSettlementBaseAmount());
+            append(sb, row.getNpayFeeAmount());
+            append(sb, row.getSalesLinkedFeeTotal());
+            append(sb, row.getInstallmentFeeAmount());
+            append(sb, row.getBenefitAmount());
+            append(sb, row.getSettlementExpectedAmount());
+            append(sb, row.getContractNo());
+            appendLast(sb, now);
+        }
 
-                ps.setLong(1, runId);
-                setLong(ps, 2, row.getUploadId());
-                setInteger(ps, 3, row.getRowNo());
-                ps.setString(4, buildJoinKey(row.getOrderNo(), row.getProductOrderNo()));
-                ps.setString(5, row.getOrderNo());
-                ps.setString(6, row.getProductOrderNo());
-                ps.setString(7, row.getSectionType());
-                ps.setString(8, row.getProductName());
-                ps.setString(9, row.getBuyerName());
-                setLocalDate(ps, 10, row.getPaymentDate());
-                setLocalDate(ps, 11, row.getAmountChangedDate());
-                setLocalDate(ps, 12, row.getSettlementScheduledDate());
-                setLocalDate(ps, 13, row.getSettlementCompletedDate());
-                setLocalDate(ps, 14, row.getSettlementBaseDate());
-                setLocalDate(ps, 15, row.getTaxReportBaseDate());
-                ps.setString(16, row.getSettlementStatus());
-                setBigDecimal(ps, 17, row.getSettlementBaseAmount());
-                setBigDecimal(ps, 18, row.getNpayFeeAmount());
-                setBigDecimal(ps, 19, row.getSalesLinkedFeeTotal());
-                setBigDecimal(ps, 20, row.getInstallmentFeeAmount());
-                setBigDecimal(ps, 21, row.getBenefitAmount());
-                setBigDecimal(ps, 22, row.getSettlementExpectedAmount());
-                ps.setString(23, row.getContractNo());
-                ps.setTimestamp(24, Timestamp.valueOf(now));
-            }
-
-            @Override
-            public int getBatchSize() {
-                return rows.size();
-            }
-        });
-
-        return result.length;
+        Connection connection = DataSourceUtils.getConnection(dataSource);
+        try (InputStream inputStream = new ByteArrayInputStream(sb.toString().getBytes(StandardCharsets.UTF_8))) {
+            PGConnection pgConnection = connection.unwrap(PGConnection.class);
+            CopyManager copyManager = pgConnection.getCopyAPI();
+            copyManager.copyIn(copySql, inputStream);
+            return rows.size();
+        } catch (Exception e) {
+            throw new RuntimeException("settlement_order_raw COPY insert 실패", e);
+        } finally {
+            DataSourceUtils.releaseConnection(connection, dataSource);
+        }
     }
 
     private String buildJoinKey(String orderNo, String productOrderNo) {
@@ -103,35 +110,45 @@ public class SettlementOrderRawBatchWriter {
         return "O:" + (orderNo == null ? "" : orderNo.trim());
     }
 
-    private void setLong(PreparedStatement ps, int index, Long value) throws SQLException {
-        if (value == null) {
-            ps.setNull(index, java.sql.Types.BIGINT);
-        } else {
-            ps.setLong(index, value);
-        }
+    private void append(StringBuilder sb, Object value) {
+        appendValue(sb, value);
+        sb.append('\t');
     }
 
-    private void setInteger(PreparedStatement ps, int index, Integer value) throws SQLException {
-        if (value == null) {
-            ps.setNull(index, java.sql.Types.INTEGER);
-        } else {
-            ps.setInt(index, value);
-        }
+    private void appendLast(StringBuilder sb, Object value) {
+        appendValue(sb, value);
+        sb.append('\n');
     }
 
-    private void setLocalDate(PreparedStatement ps, int index, java.time.LocalDate value) throws SQLException {
+    private void appendValue(StringBuilder sb, Object value) {
         if (value == null) {
-            ps.setNull(index, java.sql.Types.DATE);
-        } else {
-            ps.setDate(index, Date.valueOf(value));
+            sb.append("\\N");
+            return;
         }
+        sb.append(escapeCopyText(stringify(value)));
     }
 
-    private void setBigDecimal(PreparedStatement ps, int index, BigDecimal value) throws SQLException {
-        if (value == null) {
-            ps.setNull(index, java.sql.Types.NUMERIC);
-        } else {
-            ps.setBigDecimal(index, value);
+    private String stringify(Object value) {
+        if (value instanceof BigDecimal bigDecimal) {
+            return bigDecimal.toPlainString();
         }
+        if (value instanceof LocalDate localDate) {
+            return localDate.toString();
+        }
+        if (value instanceof LocalDateTime localDateTime) {
+            return localDateTime.toString().replace('T', ' ');
+        }
+        if (value instanceof Boolean bool) {
+            return bool ? "t" : "f";
+        }
+        return String.valueOf(value);
+    }
+
+    private String escapeCopyText(String value) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("\t", "\\t")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
     }
 }

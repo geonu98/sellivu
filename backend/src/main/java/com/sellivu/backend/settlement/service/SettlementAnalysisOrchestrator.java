@@ -127,22 +127,12 @@ public class SettlementAnalysisOrchestrator {
                     System.currentTimeMillis() - snapshotBuildStart
             );
 
-            long issueBuildStart = System.currentTimeMillis();
-            int issueCount = settlementAnalysisStepService.buildIssues(runId);
-            log.info(
-                    "[PERF] orchestrator.buildIssues runId={} issueCount={} took={}ms",
-                    runId,
-                    issueCount,
-                    System.currentTimeMillis() - issueBuildStart
-            );
-
             long markCompletedStart = System.currentTimeMillis();
-            settlementAnalysisStepService.markCompleted(runId, snapshotCount, issueCount);
+            settlementAnalysisStepService.markCompleted(runId, snapshotCount);
             log.info(
-                    "[PERF] orchestrator.markCompleted runId={} snapshotCount={} issueCount={} took={}ms",
+                    "[PERF] orchestrator.markCompleted runId={} snapshotCount={} took={}ms",
                     runId,
                     snapshotCount,
-                    issueCount,
                     System.currentTimeMillis() - markCompletedStart
             );
 

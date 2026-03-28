@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
-import type { IssueRow } from "../../../types/settlementAnalysis";
+import type { IssueRow, SnapshotRow } from "../../../types/settlementAnalysis";
 import { severityBadgeClass } from "../../../utils/settlementBadge";
 import { formatDate } from "../../../utils/date";
 
 type IssueFilter = "ACTION_REQUIRED" | "ALL" | "EXPLAINABLE" | "REFUND";
 
 type Props = {
-  rows: IssueRow[];
+  rows: SnapshotRow[];
   page: number;
   size: number;
   totalElements: number;
@@ -16,18 +16,18 @@ type Props = {
   onPageChange: (page: number) => void;
 };
 
+const ISSUE_ORDER_ONLY = 1 << 0;
+const ISSUE_FEE_ONLY = 1 << 1;
+const ISSUE_SETTLEMENT_MISMATCH = 1 << 2;
+const ISSUE_COMMISSION_MISMATCH = 1 << 3;
+const ISSUE_NET_MISMATCH = 1 << 4;
+const ISSUE_REFUND_CANDIDATE = 1 << 5;
+const ISSUE_NEEDS_USER_INPUT = 1 << 6;
+
 function sourceTypeLabel(sourceType: string | null | undefined) {
   switch (sourceType) {
     case "SNAPSHOT":
       return "비교 기준 데이터";
-    case "DAILY_CROSS_CHECK":
-      return "일별 정산 비교";
-    case "MONTHLY_CROSS_CHECK":
-      return "월별 정산 비교";
-    case "ORDER_SETTLEMENT":
-      return "건별 정산";
-    case "FEE_DETAIL":
-      return "수수료 상세";
     default:
       return sourceType || "-";
   }
@@ -116,6 +116,164 @@ function renderStatusBadges(row: IssueRow) {
 
   return badges;
 }
+function calcDiff(
+  a: number | null | undefined,
+  b: number | null | undefined
+) {
+  if (a == null || b == null) return null;
+  return a - b;
+}
+
+function formatDiffText(diff: number | null | undefined) {
+  if (diff == null) return null;
+  return Number.isInteger(diff) ? String(diff) : diff.toFixed(2);
+}
+
+
+
+function buildIssueRowsFromSnapshot(snapshot: SnapshotRow): IssueRow[] {
+  if (!snapshot.hasIssue || snapshot.issueCount <= 0) {
+    return [];
+  }
+
+  const settlementDiff = calcDiff(
+    snapshot.orderSettlementAmount,
+    snapshot.feeSettlementAmount
+  );
+  const commissionDiff = calcDiff(
+    snapshot.orderCommissionAmount,
+    snapshot.feeCommissionAmount
+  );
+  const netDiff = calcDiff(snapshot.orderNetAmount, snapshot.feeNetAmount);
+
+  const issueRows: IssueRow[] = [];
+
+ const pushIssue = (
+  issueType: string,
+  defaults: {
+    title: string;
+    description: string;
+    impact: string;
+    actionGuide: string;
+    message: string;
+    refundCandidate?: boolean;
+    needsUserInput?: boolean;
+    explainable?: boolean;
+    diff?: number | null | undefined;
+  }
+) => {
+    const diffText = formatDiffText(defaults.diff);
+    const description =
+      diffText != null
+        ? `${defaults.description} (차이: ${diffText})`
+        : defaults.description;
+
+    issueRows.push({
+      id: null,
+      sourceType: "SNAPSHOT",
+      snapshotId: snapshot.id,
+      issueType,
+      orderNo: snapshot.orderNo,
+      productOrderNo: snapshot.productOrderNo,
+      joinKey: snapshot.joinKey,
+      message: defaults.message,
+      resolved: false,
+      severity: "ERROR",
+      judgementStatus: defaults.explainable ? "EXPLAINABLE" : "PENDING",
+      explanationCode: snapshot.primaryIssueCode,
+      needsUserInput:
+        defaults.needsUserInput ?? snapshot.needsUserInput ?? false,
+      possibleReasonMessage: null,
+      issueDate: snapshot.settlementDate,
+      createdAt: snapshot.lastAggregatedAt,
+
+      displayCategory: "정산 비교 결과",
+      title: defaults.title,
+      description,
+      impact: defaults.impact,
+      actionGuide: defaults.actionGuide,
+      statusLabel: defaults.explainable ? "설명 가능" : "확인 필요",
+      explainable: defaults.explainable ?? false,
+      refundCandidate:
+        defaults.refundCandidate ?? snapshot.refundCandidate ?? false,
+    });
+  };
+
+  if ((snapshot.issueMask & ISSUE_ORDER_ONLY) !== 0) {
+    pushIssue("ORDER_ONLY", {
+      title: "주문 정산 데이터만 존재",
+      description: "주문 정산 데이터는 있지만 수수료 데이터가 없습니다.",
+      impact: "비교 기준이 한쪽만 있어 수수료 검증이 불완전합니다.",
+      actionGuide: "수수료 상세 파일 업로드 여부와 조인 기준을 확인하세요.",
+      message: "주문 정산 데이터만 있고 수수료 데이터가 없습니다.",
+      needsUserInput: true,
+    });
+  }
+
+  if ((snapshot.issueMask & ISSUE_FEE_ONLY) !== 0) {
+    pushIssue("FEE_ONLY", {
+      title: "수수료 데이터만 존재",
+      description: "수수료 데이터는 있지만 주문 정산 데이터가 없습니다.",
+      impact: "주문 기준 금액 검증이 불완전합니다.",
+      actionGuide: "주문 정산 파일 업로드 여부와 조인 기준을 확인하세요.",
+      message: "수수료 데이터만 있고 주문 정산 데이터가 없습니다.",
+      needsUserInput: true,
+    });
+  }
+
+  if ((snapshot.issueMask & ISSUE_SETTLEMENT_MISMATCH) !== 0) {
+    pushIssue("SETTLEMENT_MISMATCH", {
+      title: "정산 금액 불일치",
+      description: "주문 정산 금액과 수수료 기준 금액이 서로 다릅니다.",
+      impact: "실제 정산 기준 금액 해석이 어긋날 수 있습니다.",
+      actionGuide: "정산 기준 금액과 주문/수수료 원본 값을 비교하세요.",
+      message: "정산 금액이 일치하지 않습니다.",
+      explainable: true,
+      diff: settlementDiff,
+    });
+  }
+
+  if ((snapshot.issueMask & ISSUE_COMMISSION_MISMATCH) !== 0) {
+    pushIssue("COMMISSION_MISMATCH", {
+      title: "수수료 금액 불일치",
+      description: "주문 정산 수수료와 수수료 상세 합계가 다릅니다.",
+      impact: "실수령액과 마진 계산에 직접 영향을 줍니다.",
+      actionGuide:
+        "수수료 항목별 합계와 우대 수수료/환급 가능성을 확인하세요.",
+      message: "수수료 금액이 일치하지 않습니다.",
+      refundCandidate: snapshot.refundCandidate,
+      explainable: true,
+      diff: commissionDiff,
+    });
+  }
+
+  if ((snapshot.issueMask & ISSUE_NET_MISMATCH) !== 0) {
+    pushIssue("NET_MISMATCH", {
+      title: "실수령 금액 불일치",
+      description: "최종 실수령 금액이 기준 데이터와 다릅니다.",
+      impact: "판매자 정산 해석과 순이익 계산이 달라질 수 있습니다.",
+      actionGuide: "정산 금액, 수수료, 공제 항목을 함께 재확인하세요.",
+      message: "실수령 금액이 일치하지 않습니다.",
+      explainable: true,
+      diff: netDiff,
+    });
+  }
+
+  if (issueRows.length === 0) {
+    pushIssue(snapshot.primaryIssueCode || "ISSUE", {
+      title: "이슈 감지",
+      description: "정산 비교 과정에서 확인이 필요한 항목이 감지되었습니다.",
+      impact: "정산 해석 결과를 다시 확인할 필요가 있습니다.",
+      actionGuide: "대표 이슈 코드와 금액 비교 결과를 확인하세요.",
+      message: "확인이 필요한 이슈가 있습니다.",
+      refundCandidate: snapshot.refundCandidate,
+      needsUserInput: snapshot.needsUserInput,
+      explainable: snapshot.reviewStatus !== "PENDING",
+    });
+  }
+
+  return issueRows;
+}
 
 export default function IssuesTable({
   rows,
@@ -128,13 +286,18 @@ export default function IssuesTable({
 }: Props) {
   const [filter, setFilter] = useState<IssueFilter>("ACTION_REQUIRED");
 
+  const issueRows = useMemo(
+    () => rows.flatMap((snapshot) => buildIssueRowsFromSnapshot(snapshot)),
+    [rows]
+  );
+
   const summary = useMemo(() => {
-    const total = rows.length;
-    const refundCount = rows.filter(isRefundCandidate).length;
-    const explainableCount = rows.filter(
+    const total = issueRows.length;
+    const refundCount = issueRows.filter(isRefundCandidate).length;
+    const explainableCount = issueRows.filter(
       (row) => isExplainable(row) && !isRefundCandidate(row)
     ).length;
-    const actionRequiredCount = rows.filter(
+    const actionRequiredCount = issueRows.filter(
       (row) => isActionRequired(row) && !isRefundCandidate(row)
     ).length;
 
@@ -144,27 +307,27 @@ export default function IssuesTable({
       explainableCount,
       actionRequiredCount,
     };
-  }, [rows]);
+  }, [issueRows]);
 
   const filteredRows = useMemo(() => {
     switch (filter) {
       case "ACTION_REQUIRED":
-        return rows.filter(
+        return issueRows.filter(
           (row) => isActionRequired(row) && !isRefundCandidate(row)
         );
       case "EXPLAINABLE":
-        return rows.filter(
+        return issueRows.filter(
           (row) => isExplainable(row) && !isRefundCandidate(row)
         );
       case "REFUND":
-        return rows.filter(isRefundCandidate);
+        return issueRows.filter(isRefundCandidate);
       case "ALL":
       default:
-        return rows;
+        return issueRows;
     }
-  }, [rows, filter]);
+  }, [issueRows, filter]);
 
-  if (rows.length === 0 && !loading) {
+  if (issueRows.length === 0 && !loading) {
     return (
       <div className="rounded-xl border bg-white p-6 text-sm text-slate-500">
         이슈 데이터가 없습니다.
@@ -280,12 +443,12 @@ export default function IssuesTable({
                 </td>
               </tr>
             ) : (
-              filteredRows.map((row) => {
+              filteredRows.map((row, index) => {
                 const checkValues = buildCheckValues(row);
 
                 return (
                   <tr
-                    key={row.id ?? `${row.issueType}-${row.createdAt}`}
+                    key={`${row.snapshotId}-${row.issueType}-${index}`}
                     className="border-t align-top"
                   >
                     <td className="px-4 py-4">

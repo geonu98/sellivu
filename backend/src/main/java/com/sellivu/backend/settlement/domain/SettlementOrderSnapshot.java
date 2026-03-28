@@ -10,19 +10,17 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-@Getter
 @Entity
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(
         name = "settlement_order_snapshot",
         indexes = {
-                @Index(name = "idx_snapshot_product_order_no", columnList = "productOrderNo"),
-                @Index(name = "idx_snapshot_order_no", columnList = "orderNo"),
-                @Index(name = "idx_snapshot_match_status", columnList = "matchStatus"),
-                @Index(name = "idx_snapshot_paid_at", columnList = "paidAt"),
-                @Index(name = "idx_snapshot_settlement_date", columnList = "settlementDate")
+                @Index(name = "idx_snapshot_run_id", columnList = "run_id"),
+                @Index(name = "idx_snapshot_run_id_join_key", columnList = "run_id, join_key"),
+                @Index(name = "idx_snapshot_join_key", columnList = "join_key")
         }
 )
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class SettlementOrderSnapshot {
 
     @Id
@@ -32,11 +30,7 @@ public class SettlementOrderSnapshot {
     @Column(name = "run_id")
     private Long runId;
 
-    /**
-     * 연결 기준 키
-     * PRODUCT_ORDER_NO 우선, 없으면 ORDER_NO fallback
-     */
-    @Column(length = 100)
+    @Column(nullable = false, length = 100)
     private String joinKey;
 
     @Column(length = 100)
@@ -124,8 +118,29 @@ public class SettlementOrderSnapshot {
     @Column(nullable = false)
     private boolean netAmountMatched;
 
-    @Column(nullable = false)
+    /**
+     * 하이브리드 최종형 이슈 요약 컬럼
+     */
+    @Column(name = "has_issue", nullable = false)
+    private boolean hasIssue;
+
+    @Column(name = "issue_count", nullable = false)
     private int issueCount;
+
+    @Column(name = "issue_mask", nullable = false)
+    private long issueMask;
+
+    @Column(name = "primary_issue_code", length = 50)
+    private String primaryIssueCode;
+
+    @Column(name = "issue_payload", columnDefinition = "jsonb")
+    private String issuePayload;
+
+    @Column(name = "refund_candidate", nullable = false)
+    private boolean refundCandidate;
+
+    @Column(name = "needs_user_input", nullable = false)
+    private boolean needsUserInput;
 
     @Column(nullable = false)
     private LocalDateTime lastAggregatedAt;
@@ -159,7 +174,13 @@ public class SettlementOrderSnapshot {
             boolean settlementAmountMatched,
             boolean commissionAmountMatched,
             boolean netAmountMatched,
+            boolean hasIssue,
             int issueCount,
+            long issueMask,
+            String primaryIssueCode,
+            String issuePayload,
+            boolean refundCandidate,
+            boolean needsUserInput,
             LocalDateTime lastAggregatedAt
     ) {
         this.runId = runId;
@@ -189,7 +210,13 @@ public class SettlementOrderSnapshot {
         this.settlementAmountMatched = settlementAmountMatched;
         this.commissionAmountMatched = commissionAmountMatched;
         this.netAmountMatched = netAmountMatched;
+        this.hasIssue = hasIssue;
         this.issueCount = issueCount;
+        this.issueMask = issueMask;
+        this.primaryIssueCode = primaryIssueCode;
+        this.issuePayload = issuePayload;
+        this.refundCandidate = refundCandidate;
+        this.needsUserInput = needsUserInput;
         this.lastAggregatedAt = lastAggregatedAt;
     }
 
@@ -251,7 +278,13 @@ public class SettlementOrderSnapshot {
                 .settlementAmountMatched(settlementAmountMatched)
                 .commissionAmountMatched(commissionAmountMatched)
                 .netAmountMatched(netAmountMatched)
+                .hasIssue(issueCount > 0)
                 .issueCount(issueCount)
+                .issueMask(0L)
+                .primaryIssueCode(null)
+                .issuePayload(null)
+                .refundCandidate(false)
+                .needsUserInput(false)
                 .lastAggregatedAt(LocalDateTime.now())
                 .build();
     }
@@ -305,11 +338,43 @@ public class SettlementOrderSnapshot {
         this.settlementAmountMatched = settlementAmountMatched;
         this.commissionAmountMatched = commissionAmountMatched;
         this.netAmountMatched = netAmountMatched;
+        this.hasIssue = issueCount > 0;
         this.issueCount = issueCount;
         this.lastAggregatedAt = LocalDateTime.now();
     }
 
     public void updateIssueCount(int issueCount) {
+        this.hasIssue = issueCount > 0;
         this.issueCount = issueCount;
+        this.lastAggregatedAt = LocalDateTime.now();
+    }
+
+    public void updateIssueSummary(
+            long issueMask,
+            int issueCount,
+            String primaryIssueCode,
+            String issuePayload,
+            boolean refundCandidate,
+            boolean needsUserInput
+    ) {
+        this.hasIssue = issueCount > 0;
+        this.issueMask = issueMask;
+        this.issueCount = issueCount;
+        this.primaryIssueCode = primaryIssueCode;
+        this.issuePayload = issuePayload;
+        this.refundCandidate = refundCandidate;
+        this.needsUserInput = needsUserInput;
+        this.lastAggregatedAt = LocalDateTime.now();
+    }
+
+    public void clearIssueSummary() {
+        this.hasIssue = false;
+        this.issueCount = 0;
+        this.issueMask = 0L;
+        this.primaryIssueCode = null;
+        this.issuePayload = null;
+        this.refundCandidate = false;
+        this.needsUserInput = false;
+        this.lastAggregatedAt = LocalDateTime.now();
     }
 }

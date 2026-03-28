@@ -13,7 +13,6 @@ public class SettlementAnalysisStepService {
     private final SettlementAnalysisRunService settlementAnalysisRunService;
     private final SettlementRawLoadService settlementRawLoadService;
     private final SettlementSnapshotBuildService settlementSnapshotBuildService;
-    private final SettlementIssueBuildService settlementIssueBuildService;
 
     @Transactional
     public void markRawLoading(Long runId) {
@@ -75,20 +74,12 @@ public class SettlementAnalysisStepService {
         return snapshotCount;
     }
 
-    public int buildIssues(Long runId) {
-        long start = System.currentTimeMillis();
-        int issueCount = settlementIssueBuildService.build(runId);
-        log.info("[PERF] step.buildIssues runId={} issueCount={} took={}ms",
-                runId, issueCount, System.currentTimeMillis() - start);
-        return issueCount;
-    }
-
     @Transactional
-    public void markCompleted(Long runId, int snapshotCount, int issueCount) {
+    public void markCompleted(Long runId, int snapshotCount) {
         long start = System.currentTimeMillis();
-        settlementAnalysisRunService.markCompleted(runId, snapshotCount, issueCount);
-        log.info("[PERF] step.markCompleted runId={} snapshotCount={} issueCount={} took={}ms",
-                runId, snapshotCount, issueCount, System.currentTimeMillis() - start);
+        settlementAnalysisRunService.markCompleted(runId, snapshotCount, 0);
+        log.info("[PERF] step.markCompleted runId={} snapshotCount={} took={}ms",
+                runId, snapshotCount, System.currentTimeMillis() - start);
     }
 
     @Transactional

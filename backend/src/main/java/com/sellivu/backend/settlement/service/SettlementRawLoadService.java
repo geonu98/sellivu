@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -18,7 +19,7 @@ import java.util.List;
 @Transactional
 public class SettlementRawLoadService {
 
-    private static final int CHUNK_SIZE = 2000;
+    private static final int CHUNK_SIZE = 10000;
 
     private final SettlementUploadRepository settlementUploadRepository;
     private final SettlementUploadStorage settlementUploadStorage;
@@ -62,9 +63,10 @@ public class SettlementRawLoadService {
                 List<SettlementParsedRow> chunk = parsedRows.subList(start, end);
 
                 long mapStart = System.currentTimeMillis();
-                List<SettlementOrderRow> rows = chunk.stream()
-                        .map(row -> settlementOrderRowMapper.map(uploadId, row))
-                        .toList();
+                List<SettlementOrderRow> rows = new ArrayList<>(chunk.size());
+                for (SettlementParsedRow parsedRow : chunk) {
+                    rows.add(settlementOrderRowMapper.map(uploadId, parsedRow));
+                }
                 log.info(
                         "[PERF] rawLoad.mapOrderChunk runId={} uploadId={} chunk={} rows={} took={}ms",
                         runId,
@@ -135,9 +137,10 @@ public class SettlementRawLoadService {
                 List<SettlementParsedRow> chunk = parsedRows.subList(start, end);
 
                 long mapStart = System.currentTimeMillis();
-                List<SettlementFeeRow> rows = chunk.stream()
-                        .map(row -> settlementFeeRowMapper.map(uploadId, row))
-                        .toList();
+                List<SettlementFeeRow> rows = new ArrayList<>(chunk.size());
+                for (SettlementParsedRow parsedRow : chunk) {
+                    rows.add(settlementFeeRowMapper.map(uploadId, parsedRow));
+                }
                 log.info(
                         "[PERF] rawLoad.mapFeeChunk runId={} uploadId={} chunk={} rows={} took={}ms",
                         runId,
@@ -215,9 +218,10 @@ public class SettlementRawLoadService {
                 List<SettlementParsedRow> chunk = parsedRows.subList(start, end);
 
                 long mapStart = System.currentTimeMillis();
-                List<SettlementDailyRow> rows = chunk.stream()
-                        .map(row -> settlementDailyRowMapper.map(runId, uploadId, row))
-                        .toList();
+                List<SettlementDailyRow> rows = new ArrayList<>(chunk.size());
+                for (SettlementParsedRow parsedRow : chunk) {
+                    rows.add(settlementDailyRowMapper.map(runId, uploadId, parsedRow));
+                }
 
                 log.info(
                         "[PERF] rawLoad.mapDailyChunk runId={} uploadId={} chunk={} rows={} took={}ms",

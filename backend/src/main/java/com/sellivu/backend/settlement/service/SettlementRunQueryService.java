@@ -3,7 +3,6 @@ package com.sellivu.backend.settlement.service;
 import com.sellivu.backend.global.error.ApiException;
 import com.sellivu.backend.global.error.ErrorCode;
 import com.sellivu.backend.settlement.domain.SettlementDailyRaw;
-import com.sellivu.backend.settlement.domain.SettlementIssue;
 import com.sellivu.backend.settlement.domain.SettlementOrderSnapshot;
 import com.sellivu.backend.settlement.domain.SettlementWorkspace;
 import com.sellivu.backend.settlement.dto.SettlementDailyRowResponse;
@@ -13,7 +12,6 @@ import com.sellivu.backend.settlement.dto.SettlementOrderRowResponse;
 import com.sellivu.backend.settlement.dto.SettlementRunSummaryResponse;
 import com.sellivu.backend.settlement.repository.SettlementDailyRawRepository;
 import com.sellivu.backend.settlement.repository.SettlementFeeRawRepository;
-import com.sellivu.backend.settlement.repository.SettlementIssueRepository;
 import com.sellivu.backend.settlement.repository.SettlementOrderRawRepository;
 import com.sellivu.backend.settlement.repository.SettlementOrderSnapshotRepository;
 import com.sellivu.backend.settlement.repository.SettlementWorkspaceRepository;
@@ -37,7 +35,6 @@ public class SettlementRunQueryService {
 
     private final SettlementWorkspaceRepository settlementWorkspaceRepository;
     private final SettlementOrderSnapshotRepository settlementOrderSnapshotRepository;
-    private final SettlementIssueRepository settlementIssueRepository;
     private final SettlementWorkspaceService settlementWorkspaceService;
     private final SettlementOrderRawRepository settlementOrderRawRepository;
     private final SettlementFeeRawRepository settlementFeeRawRepository;
@@ -72,14 +69,6 @@ public class SettlementRunQueryService {
     public Page<SettlementOrderSnapshot> getActiveRunSnapshots(Long workspaceId, int page, int size) {
         Long runId = getRequiredActiveRunId(workspaceId);
         return settlementOrderSnapshotRepository.findAllByRunIdOrderByIdDesc(
-                runId,
-                PageRequest.of(page, size)
-        );
-    }
-
-    public Page<SettlementIssue> getActiveRunIssues(Long workspaceId, int page, int size) {
-        Long runId = getRequiredActiveRunId(workspaceId);
-        return settlementIssueRepository.findAllByRunIdOrderByIdDesc(
                 runId,
                 PageRequest.of(page, size)
         );
@@ -197,40 +186,14 @@ public class SettlementRunQueryService {
         Long runId = workspace.getActiveRunId();
 
         long dailyCount = settlementDailyRawRepository.countByRunId(runId);
-        long monthlyCount = getActiveRunMonthly(workspaceKey, workspaceToken).size();
+        long monthlyCount = settlementDailyRawRepository.countDistinctSettlementCompletedMonthByRunId(runId);
         long orderCount = settlementOrderRawRepository.countByRunId(runId);
         long feeCount = settlementFeeRawRepository.countByRunId(runId);
         long snapshotCount = settlementOrderSnapshotRepository.countByRunId(runId);
-        long issueCount = settlementIssueRepository.countByRunId(runId);
+        long issueCount = settlementOrderSnapshotRepository.sumIssueCountByRunId(runId);
 
-        List<SettlementDailyRaw> dailyRows =
-                settlementDailyRawRepository.findAllByRunIdOrderBySettlementCompletedDateAscIdAsc(runId);
-
-        BigDecimal settlementAmount = BigDecimal.ZERO;
-        BigDecimal generalSettlementAmount = BigDecimal.ZERO;
-        BigDecimal fastSettlementAmount = BigDecimal.ZERO;
-        BigDecimal settlementBaseAmount = BigDecimal.ZERO;
-        BigDecimal totalFeeAmount = BigDecimal.ZERO;
-        BigDecimal benefitSettlementAmount = BigDecimal.ZERO;
-        BigDecimal dailyDeductionRefundAmount = BigDecimal.ZERO;
-        BigDecimal holdAmount = BigDecimal.ZERO;
-        BigDecimal bizWalletOffsetAmount = BigDecimal.ZERO;
-        BigDecimal safeReturnCareCost = BigDecimal.ZERO;
-        BigDecimal preferredFeeRefundAmount = BigDecimal.ZERO;
-
-        for (SettlementDailyRaw row : dailyRows) {
-            settlementAmount = settlementAmount.add(nvl(row.getSettlementAmount()));
-            generalSettlementAmount = generalSettlementAmount.add(nvl(row.getGeneralSettlementAmount()));
-            fastSettlementAmount = fastSettlementAmount.add(nvl(row.getFastSettlementAmount()));
-            settlementBaseAmount = settlementBaseAmount.add(nvl(row.getSettlementBaseAmount()));
-            totalFeeAmount = totalFeeAmount.add(nvl(row.getTotalFeeAmount()));
-            benefitSettlementAmount = benefitSettlementAmount.add(nvl(row.getBenefitSettlementAmount()));
-            dailyDeductionRefundAmount = dailyDeductionRefundAmount.add(nvl(row.getDailyDeductionRefundAmount()));
-            holdAmount = holdAmount.add(nvl(row.getHoldAmount()));
-            bizWalletOffsetAmount = bizWalletOffsetAmount.add(nvl(row.getBizWalletOffsetAmount()));
-            safeReturnCareCost = safeReturnCareCost.add(nvl(row.getSafeReturnCareCost()));
-            preferredFeeRefundAmount = preferredFeeRefundAmount.add(nvl(row.getPreferredFeeRefundAmount()));
-        }
+        SettlementDailyRawRepository.DailySummaryAggregateProjection dailySummary =
+                settlementDailyRawRepository.aggregateSummaryByRunId(runId);
 
         return new SettlementRunSummaryResponse(
                 dailyCount,
@@ -239,21 +202,25 @@ public class SettlementRunQueryService {
                 feeCount,
                 snapshotCount,
                 issueCount,
-                settlementAmount,
-                generalSettlementAmount,
-                fastSettlementAmount,
-                settlementBaseAmount,
-                totalFeeAmount,
-                benefitSettlementAmount,
-                dailyDeductionRefundAmount,
-                holdAmount,
-                bizWalletOffsetAmount,
-                safeReturnCareCost,
-                preferredFeeRefundAmount
+                zeroIfNull(dailySummary != null ? dailySummary.getSettlementAmount() : null),
+                zeroIfNull(dailySummary != null ? dailySummary.getGeneralSettlementAmount() : null),
+                zeroIfNull(dailySummary != null ? dailySummary.getFastSettlementAmount() : null),
+                zeroIfNull(dailySummary != null ? dailySummary.getSettlementBaseAmount() : null),
+                zeroIfNull(dailySummary != null ? dailySummary.getTotalFeeAmount() : null),
+                zeroIfNull(dailySummary != null ? dailySummary.getBenefitSettlementAmount() : null),
+                zeroIfNull(dailySummary != null ? dailySummary.getDailyDeductionRefundAmount() : null),
+                zeroIfNull(dailySummary != null ? dailySummary.getHoldAmount() : null),
+                zeroIfNull(dailySummary != null ? dailySummary.getBizWalletOffsetAmount() : null),
+                zeroIfNull(dailySummary != null ? dailySummary.getSafeReturnCareCost() : null),
+                zeroIfNull(dailySummary != null ? dailySummary.getPreferredFeeRefundAmount() : null)
         );
     }
 
     private BigDecimal nvl(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private BigDecimal zeroIfNull(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
     }
 

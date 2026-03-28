@@ -18,9 +18,6 @@ public class SettlementSnapshotResponse {
     private final Long orderUploadId;
     private final Long feeUploadId;
     private final String productName;
-    private final String optionName;
-    private final String sellerProductCode;
-    private final String sellerOptionCode;
     private final LocalDate paidAt;
     private final LocalDate settlementDate;
     private final BigDecimal orderSettlementAmount;
@@ -35,7 +32,12 @@ public class SettlementSnapshotResponse {
     private final boolean settlementAmountMatched;
     private final boolean commissionAmountMatched;
     private final boolean netAmountMatched;
+    private final boolean hasIssue;
     private final int issueCount;
+    private final long issueMask;
+    private final String primaryIssueCode;
+    private final boolean refundCandidate;
+    private final boolean needsUserInput;
     private final String reviewStatus;
     private final LocalDateTime lastAggregatedAt;
 
@@ -50,9 +52,6 @@ public class SettlementSnapshotResponse {
             Long orderUploadId,
             Long feeUploadId,
             String productName,
-            String optionName,
-            String sellerProductCode,
-            String sellerOptionCode,
             LocalDate paidAt,
             LocalDate settlementDate,
             BigDecimal orderSettlementAmount,
@@ -67,7 +66,12 @@ public class SettlementSnapshotResponse {
             boolean settlementAmountMatched,
             boolean commissionAmountMatched,
             boolean netAmountMatched,
+            boolean hasIssue,
             int issueCount,
+            long issueMask,
+            String primaryIssueCode,
+            boolean refundCandidate,
+            boolean needsUserInput,
             String reviewStatus,
             LocalDateTime lastAggregatedAt
     ) {
@@ -81,9 +85,6 @@ public class SettlementSnapshotResponse {
         this.orderUploadId = orderUploadId;
         this.feeUploadId = feeUploadId;
         this.productName = productName;
-        this.optionName = optionName;
-        this.sellerProductCode = sellerProductCode;
-        this.sellerOptionCode = sellerOptionCode;
         this.paidAt = paidAt;
         this.settlementDate = settlementDate;
         this.orderSettlementAmount = orderSettlementAmount;
@@ -98,7 +99,12 @@ public class SettlementSnapshotResponse {
         this.settlementAmountMatched = settlementAmountMatched;
         this.commissionAmountMatched = commissionAmountMatched;
         this.netAmountMatched = netAmountMatched;
+        this.hasIssue = hasIssue;
         this.issueCount = issueCount;
+        this.issueMask = issueMask;
+        this.primaryIssueCode = primaryIssueCode;
+        this.refundCandidate = refundCandidate;
+        this.needsUserInput = needsUserInput;
         this.reviewStatus = reviewStatus;
         this.lastAggregatedAt = lastAggregatedAt;
     }
@@ -115,9 +121,6 @@ public class SettlementSnapshotResponse {
                 snapshot.getOrderUploadId(),
                 snapshot.getFeeUploadId(),
                 snapshot.getProductName(),
-                snapshot.getOptionName(),
-                snapshot.getSellerProductCode(),
-                snapshot.getSellerOptionCode(),
                 snapshot.getPaidAt(),
                 snapshot.getSettlementDate(),
                 snapshot.getOrderSettlementAmount(),
@@ -132,139 +135,55 @@ public class SettlementSnapshotResponse {
                 snapshot.isSettlementAmountMatched(),
                 snapshot.isCommissionAmountMatched(),
                 snapshot.isNetAmountMatched(),
+                snapshot.isHasIssue(),
                 snapshot.getIssueCount(),
+                snapshot.getIssueMask(),
+                snapshot.getPrimaryIssueCode(),
+                snapshot.isRefundCandidate(),
+                snapshot.isNeedsUserInput(),
                 resolveReviewStatus(snapshot),
                 snapshot.getLastAggregatedAt()
         );
     }
 
     private static String resolveReviewStatus(SettlementOrderSnapshot snapshot) {
-        if (snapshot.getIssueCount() == 0) {
-            return "OK";
-        }
-        if ("MATCHED".equals(snapshot.getMatchStatus().name())) {
-            return "REVIEW";
-        }
+        if (!snapshot.isHasIssue()) return "OK";
+        if (snapshot.isNeedsUserInput()) return "PENDING";
+        if (snapshot.isRefundCandidate()) return "REFUND_CANDIDATE";
+        if ("MATCHED".equals(snapshot.getMatchStatus().name())) return "REVIEW";
         return "ISSUE";
     }
 
-    public Long getId() {
-        return id;
-    }
-
-    public String getJoinKey() {
-        return joinKey;
-    }
-
-    public String getOrderNo() {
-        return orderNo;
-    }
-
-    public String getProductOrderNo() {
-        return productOrderNo;
-    }
-
-    public String getMatchStatus() {
-        return matchStatus;
-    }
-
-    public Long getOrderRowId() {
-        return orderRowId;
-    }
-
-    public Long getFeeRowId() {
-        return feeRowId;
-    }
-
-    public Long getOrderUploadId() {
-        return orderUploadId;
-    }
-
-    public Long getFeeUploadId() {
-        return feeUploadId;
-    }
-
-    public String getProductName() {
-        return productName;
-    }
-
-    public String getOptionName() {
-        return optionName;
-    }
-
-    public String getSellerProductCode() {
-        return sellerProductCode;
-    }
-
-    public String getSellerOptionCode() {
-        return sellerOptionCode;
-    }
-
-    public LocalDate getPaidAt() {
-        return paidAt;
-    }
-
-    public LocalDate getSettlementDate() {
-        return settlementDate;
-    }
-
-    public BigDecimal getOrderSettlementAmount() {
-        return orderSettlementAmount;
-    }
-
-    public BigDecimal getOrderCommissionAmount() {
-        return orderCommissionAmount;
-    }
-
-    public BigDecimal getOrderNetAmount() {
-        return orderNetAmount;
-    }
-
-    public BigDecimal getFeeSettlementAmount() {
-        return feeSettlementAmount;
-    }
-
-    public BigDecimal getFeeCommissionAmount() {
-        return feeCommissionAmount;
-    }
-
-    public BigDecimal getFeeNetAmount() {
-        return feeNetAmount;
-    }
-
-    public BigDecimal getResolvedSettlementAmount() {
-        return resolvedSettlementAmount;
-    }
-
-    public BigDecimal getResolvedCommissionAmount() {
-        return resolvedCommissionAmount;
-    }
-
-    public BigDecimal getResolvedNetAmount() {
-        return resolvedNetAmount;
-    }
-
-    public boolean isSettlementAmountMatched() {
-        return settlementAmountMatched;
-    }
-
-    public boolean isCommissionAmountMatched() {
-        return commissionAmountMatched;
-    }
-
-    public boolean isNetAmountMatched() {
-        return netAmountMatched;
-    }
-
-    public int getIssueCount() {
-        return issueCount;
-    }
-
-    public String getReviewStatus() {
-        return reviewStatus;
-    }
-
-    public LocalDateTime getLastAggregatedAt() {
-        return lastAggregatedAt;
-    }
+    public Long getId() { return id; }
+    public String getJoinKey() { return joinKey; }
+    public String getOrderNo() { return orderNo; }
+    public String getProductOrderNo() { return productOrderNo; }
+    public String getMatchStatus() { return matchStatus; }
+    public Long getOrderRowId() { return orderRowId; }
+    public Long getFeeRowId() { return feeRowId; }
+    public Long getOrderUploadId() { return orderUploadId; }
+    public Long getFeeUploadId() { return feeUploadId; }
+    public String getProductName() { return productName; }
+    public LocalDate getPaidAt() { return paidAt; }
+    public LocalDate getSettlementDate() { return settlementDate; }
+    public BigDecimal getOrderSettlementAmount() { return orderSettlementAmount; }
+    public BigDecimal getOrderCommissionAmount() { return orderCommissionAmount; }
+    public BigDecimal getOrderNetAmount() { return orderNetAmount; }
+    public BigDecimal getFeeSettlementAmount() { return feeSettlementAmount; }
+    public BigDecimal getFeeCommissionAmount() { return feeCommissionAmount; }
+    public BigDecimal getFeeNetAmount() { return feeNetAmount; }
+    public BigDecimal getResolvedSettlementAmount() { return resolvedSettlementAmount; }
+    public BigDecimal getResolvedCommissionAmount() { return resolvedCommissionAmount; }
+    public BigDecimal getResolvedNetAmount() { return resolvedNetAmount; }
+    public boolean isSettlementAmountMatched() { return settlementAmountMatched; }
+    public boolean isCommissionAmountMatched() { return commissionAmountMatched; }
+    public boolean isNetAmountMatched() { return netAmountMatched; }
+    public boolean isHasIssue() { return hasIssue; }
+    public int getIssueCount() { return issueCount; }
+    public long getIssueMask() { return issueMask; }
+    public String getPrimaryIssueCode() { return primaryIssueCode; }
+    public boolean isRefundCandidate() { return refundCandidate; }
+    public boolean isNeedsUserInput() { return needsUserInput; }
+    public String getReviewStatus() { return reviewStatus; }
+    public LocalDateTime getLastAggregatedAt() { return lastAggregatedAt; }
 }

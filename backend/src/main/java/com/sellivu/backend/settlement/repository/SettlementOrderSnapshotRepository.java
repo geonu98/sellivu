@@ -8,6 +8,8 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface SettlementOrderSnapshotRepository extends JpaRepository<SettlementOrderSnapshot, Long> {
 
@@ -29,7 +31,7 @@ public interface SettlementOrderSnapshotRepository extends JpaRepository<Settlem
             List<Long> orderUploadIds,
             List<Long> feeUploadIds
     );
-//runid + join key
+
     Optional<SettlementOrderSnapshot> findByRunIdAndJoinKey(Long runId, String joinKey);
 
     List<SettlementOrderSnapshot> findAllByRunIdAndJoinKeyIn(Long runId, List<String> joinKeys);
@@ -42,7 +44,12 @@ public interface SettlementOrderSnapshotRepository extends JpaRepository<Settlem
 
     void deleteAllByRunId(Long runId);
 
-
-
     Page<SettlementOrderSnapshot> findAllByRunIdOrderByIdDesc(Long runId, Pageable pageable);
+
+    @Query("""
+        select coalesce(sum(s.issueCount), 0)
+        from SettlementOrderSnapshot s
+        where s.runId = :runId
+    """)
+    long sumIssueCountByRunId(@Param("runId") Long runId);
 }
