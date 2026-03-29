@@ -6,15 +6,22 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+
 @Component
 public class SettlementValueParser {
 
-    private static final List<DateTimeFormatter> DATE_FORMATTERS = List.of(
-            DateTimeFormatter.ofPattern("yyyy.MM.dd"),
-            DateTimeFormatter.ofPattern("yyyy-MM-dd"),
-            DateTimeFormatter.ofPattern("yyyy/M/d"),
-            DateTimeFormatter.ofPattern("yyyy/M/dd"),
-            DateTimeFormatter.ofPattern("yyyy.MM.d"),
+    private static final DateTimeFormatter DATE_DOT_2 = DateTimeFormatter.ofPattern("yyyy.MM.dd");
+    private static final DateTimeFormatter DATE_DASH = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final DateTimeFormatter DATE_SLASH_1 = DateTimeFormatter.ofPattern("yyyy/M/d");
+    private static final DateTimeFormatter DATE_SLASH_2 = DateTimeFormatter.ofPattern("yyyy/M/dd");
+    private static final DateTimeFormatter DATE_DOT_1 = DateTimeFormatter.ofPattern("yyyy.MM.d");
+
+    private static final List<DateTimeFormatter> FALLBACK_DATE_FORMATTERS = List.of(
+            DATE_DOT_2,
+            DATE_DASH,
+            DATE_SLASH_1,
+            DATE_SLASH_2,
+            DATE_DOT_1,
             DateTimeFormatter.BASIC_ISO_DATE
     );
 
@@ -56,7 +63,44 @@ public class SettlementValueParser {
             return null;
         }
 
-        for (DateTimeFormatter formatter : DATE_FORMATTERS) {
+        int length = normalized.length();
+
+        try {
+            if (length == 10) {
+                char c4 = normalized.charAt(4);
+                char c7 = normalized.charAt(7);
+
+                if (c4 == '-' && c7 == '-') {
+                    return LocalDate.parse(normalized, DATE_DASH);
+                }
+
+                if (c4 == '.' && c7 == '.') {
+                    return LocalDate.parse(normalized, DATE_DOT_2);
+                }
+            }
+
+            if (length == 9) {
+                if (normalized.charAt(4) == '.' && normalized.charAt(7) == '.') {
+                    return LocalDate.parse(normalized, DATE_DOT_1);
+                }
+
+                if (normalized.charAt(4) == '/' && normalized.charAt(6) == '/') {
+                    return LocalDate.parse(normalized, DATE_SLASH_1);
+                }
+            }
+
+            if (length == 8 && isDigitsOnly(normalized)) {
+                return LocalDate.parse(normalized, DateTimeFormatter.BASIC_ISO_DATE);
+            }
+
+            if (normalized.indexOf('/') >= 0) {
+                return LocalDate.parse(normalized, DATE_SLASH_2);
+            }
+        } catch (Exception ignored) {
+            // 아래 fallback으로 이동
+        }
+
+        for (DateTimeFormatter formatter : FALLBACK_DATE_FORMATTERS) {
             try {
                 return LocalDate.parse(normalized, formatter);
             } catch (Exception ignored) {
@@ -85,15 +129,32 @@ public class SettlementValueParser {
             return null;
         }
 
-        normalized = normalized.replace(",", "")
-                .replace("원", "")
-                .replace("₩", "")
-                .replace(" ", "");
+        if (normalized.indexOf(',') >= 0) {
+            normalized = normalized.replace(",", "");
+        }
+        if (normalized.indexOf('원') >= 0) {
+            normalized = normalized.replace("원", "");
+        }
+        if (normalized.indexOf('₩') >= 0) {
+            normalized = normalized.replace("₩", "");
+        }
+        if (normalized.indexOf(' ') >= 0) {
+            normalized = normalized.replace(" ", "");
+        }
 
         if (normalized.isBlank() || "-".equals(normalized)) {
             return null;
         }
 
         return normalized;
+    }
+
+    private boolean isDigitsOnly(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            if (!Character.isDigit(value.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 }

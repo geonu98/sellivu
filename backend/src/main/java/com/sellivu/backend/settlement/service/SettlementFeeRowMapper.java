@@ -4,12 +4,14 @@ import com.sellivu.backend.settlement.domain.SettlementFeeRow;
 import com.sellivu.backend.settlement.domain.StandardSettlementField;
 import com.sellivu.backend.settlement.parser.SettlementParsedRow;
 import com.sellivu.backend.settlement.parser.SettlementValueParser;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 @Component
+@RequiredArgsConstructor
 public class SettlementFeeRowMapper {
 
-    private final SettlementValueParser valueParser = new SettlementValueParser();
+    private final SettlementValueParser valueParser;
 
     public SettlementFeeRow map(Long uploadId, SettlementParsedRow row) {
         return new SettlementFeeRow(
