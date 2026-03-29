@@ -21,8 +21,7 @@ const ISSUE_FEE_ONLY = 1 << 1;
 const ISSUE_SETTLEMENT_MISMATCH = 1 << 2;
 const ISSUE_COMMISSION_MISMATCH = 1 << 3;
 const ISSUE_NET_MISMATCH = 1 << 4;
-const ISSUE_REFUND_CANDIDATE = 1 << 5;
-const ISSUE_NEEDS_USER_INPUT = 1 << 6;
+
 
 function sourceTypeLabel(sourceType: string | null | undefined) {
   switch (sourceType) {
