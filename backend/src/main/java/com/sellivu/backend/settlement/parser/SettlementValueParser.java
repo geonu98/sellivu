@@ -109,7 +109,7 @@ public class SettlementValueParser {
 
         throw new IllegalArgumentException("날짜 파싱에 실패했습니다. value=" + value);
     }
-
+//소수점 자름
     private String normalizeNumber(String value) {
         String normalized = normalizeDecimal(value);
         if (normalized == null) {

@@ -8,8 +8,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.security.core.Authentication;
+import com.sellivu.backend.global.security.CustomUserPrincipal;
 
-import java.lang.reflect.Method;
+
 import java.util.List;
 
 
@@ -32,12 +33,10 @@ public class SettlementWorkspaceController {
 
     @PostMapping
     public WorkspaceCreateResponse createWorkspace(Authentication authentication) {
-        System.out.println("createWorkspace authentication = " + authentication);
-        System.out.println("createWorkspace principal = " +
-                (authentication != null ? authentication.getPrincipal() : null));
+
 
         Long userId = resolveUserId(authentication);
-        System.out.println("createWorkspace resolvedUserId = " + userId);
+
 
         return settlementWorkspaceService.createWorkspace(userId);
     }
@@ -93,19 +92,18 @@ public class SettlementWorkspaceController {
             @RequestHeader(WORKSPACE_TOKEN_HEADER) String workspaceToken
     ) {
         return settlementWorkspaceIssueService.getIssues(workspaceKey, workspaceToken);
-    }@PostMapping("/{workspaceKey}/save")
+    }
+
+    @PostMapping("/{workspaceKey}/save")
     public WorkspaceSaveResponse save(
             @PathVariable String workspaceKey,
             @RequestHeader(WORKSPACE_TOKEN_HEADER) String workspaceToken,
             @RequestBody WorkspaceSaveRequest request,
             Authentication authentication
     ) {
-        System.out.println("save authentication = " + authentication);
-        System.out.println("save principal = " +
-                (authentication != null ? authentication.getPrincipal() : null));
+
 
         Long userId = resolveUserId(authentication);
-        System.out.println("save resolvedUserId = " + userId);
 
         return settlementWorkspaceSaveService.save(workspaceKey, workspaceToken, userId, request);
     }
@@ -121,34 +119,13 @@ public class SettlementWorkspaceController {
     }
 
     private Long resolveUserId(Authentication authentication) {
-        if (authentication == null || authentication.getPrincipal() == null) {
+        if (authentication == null) {
             return null;
         }
 
         Object principal = authentication.getPrincipal();
-
-        try {
-            Method getter = principal.getClass().getMethod("getUserId");
-            Object value = getter.invoke(principal);
-            if (value instanceof Long longValue) {
-                return longValue;
-            }
-            if (value instanceof Number number) {
-                return number.longValue();
-            }
-        } catch (Exception ignored) {
-        }
-
-        try {
-            Method getter = principal.getClass().getMethod("getId");
-            Object value = getter.invoke(principal);
-            if (value instanceof Long longValue) {
-                return longValue;
-            }
-            if (value instanceof Number number) {
-                return number.longValue();
-            }
-        } catch (Exception ignored) {
+        if (principal instanceof CustomUserPrincipal customUserPrincipal) {
+            return customUserPrincipal.getUserId();
         }
 
         return null;

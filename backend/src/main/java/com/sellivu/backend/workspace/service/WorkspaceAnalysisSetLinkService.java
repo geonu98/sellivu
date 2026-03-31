@@ -12,7 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.lang.reflect.Method;
+
 import java.util.Comparator;
 import java.util.List;
 
@@ -58,23 +58,15 @@ public class WorkspaceAnalysisSetLinkService {
     }
 
     private Long extractAnalysisSetId(SettlementAnalysisSetResponse response) {
-        try {
-            Method getter = response.getClass().getMethod("getId");
-            Object value = getter.invoke(response);
-            return (Long) value;
-        } catch (Exception ignored) {
+        Long analysisSetId = response.getId();
+
+        if (analysisSetId == null) {
+            throw new ApiException(
+                    ErrorCode.INTERNAL_SERVER_ERROR,
+                    "SettlementAnalysisSetResponse id가 비어 있습니다."
+            );
         }
 
-        try {
-            Method accessor = response.getClass().getMethod("id");
-            Object value = accessor.invoke(response);
-            return (Long) value;
-        } catch (Exception ignored) {
-        }
-
-        throw new ApiException(
-                ErrorCode.INTERNAL_SERVER_ERROR,
-                "SettlementAnalysisSetResponse에서 id를 읽을 수 없습니다."
-        );
+        return analysisSetId;
     }
 }

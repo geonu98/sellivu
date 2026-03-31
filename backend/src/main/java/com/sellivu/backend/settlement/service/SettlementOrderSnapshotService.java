@@ -11,6 +11,7 @@ import com.sellivu.backend.settlement.repository.SettlementFeeRowRepository;
 import com.sellivu.backend.settlement.repository.SettlementIssueRepository;
 import com.sellivu.backend.settlement.repository.SettlementOrderRowRepository;
 import com.sellivu.backend.settlement.repository.SettlementOrderSnapshotRepository;
+import com.sellivu.backend.settlement.util.SettlementJoinKeyResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -59,7 +60,10 @@ public class SettlementOrderSnapshotService {
             int blankJoinKeyCount = 0;
 
             for (SettlementOrderRow orderRow : uploadedOrderRows) {
-                String joinKey = resolveJoinKey(orderRow.getProductOrderNo(), orderRow.getOrderNo());
+                String joinKey = SettlementJoinKeyResolver.resolve(
+                        orderRow.getProductOrderNo(),
+                        orderRow.getOrderNo()
+                );
                 if (isBlank(joinKey)) {
                     blankJoinKeyCount++;
                     continue;
@@ -167,7 +171,10 @@ public class SettlementOrderSnapshotService {
             int blankJoinKeyCount = 0;
 
             for (SettlementFeeRow feeRow : uploadedFeeRows) {
-                String joinKey = resolveJoinKey(feeRow.getProductOrderNo(), feeRow.getOrderNo());
+                String joinKey = SettlementJoinKeyResolver.resolve(
+                        feeRow.getProductOrderNo(),
+                        feeRow.getOrderNo()
+                );
                 if (isBlank(joinKey)) {
                     blankJoinKeyCount++;
                     continue;
@@ -261,7 +268,10 @@ public class SettlementOrderSnapshotService {
 
     @Transactional
     public void aggregateByOrderRow(SettlementOrderRow orderRow) {
-        String joinKey = resolveJoinKey(orderRow.getProductOrderNo(), orderRow.getOrderNo());
+        String joinKey = SettlementJoinKeyResolver.resolve(
+                orderRow.getProductOrderNo(),
+                orderRow.getOrderNo()
+        );
         if (isBlank(joinKey)) {
             createStandaloneIssue(
                     SettlementIssueType.MISSING_JOIN_KEY,
@@ -278,7 +288,10 @@ public class SettlementOrderSnapshotService {
 
     @Transactional
     public void aggregateByFeeRow(SettlementFeeRow feeRow) {
-        String joinKey = resolveJoinKey(feeRow.getProductOrderNo(), feeRow.getOrderNo());
+        String joinKey = SettlementJoinKeyResolver.resolve(
+                feeRow.getProductOrderNo(),
+                feeRow.getOrderNo()
+        );
         if (isBlank(joinKey)) {
             createStandaloneIssue(
                     SettlementIssueType.MISSING_JOIN_KEY,
@@ -442,7 +455,7 @@ public class SettlementOrderSnapshotService {
         SettlementOrderSnapshot snapshot = existingSnapshot != null
                 ? existingSnapshot
                 : SettlementOrderSnapshot.create(
-                        null, //일단 null  runid 없어서
+                null, //일단 null  runid 없어서
                 joinKey,
                 orderNo,
                 productOrderNo,
@@ -545,7 +558,10 @@ public class SettlementOrderSnapshotService {
     private Map<String, List<SettlementOrderRow>> buildOrderRowsByJoinKey(List<SettlementOrderRow> rows) {
         Map<String, List<SettlementOrderRow>> result = new HashMap<>();
         for (SettlementOrderRow row : rows) {
-            String joinKey = resolveJoinKey(row.getProductOrderNo(), row.getOrderNo());
+            String joinKey = SettlementJoinKeyResolver.resolve(
+                    row.getProductOrderNo(),
+                    row.getOrderNo()
+            );
             if (isBlank(joinKey)) {
                 continue;
             }
@@ -557,7 +573,10 @@ public class SettlementOrderSnapshotService {
     private Map<String, List<SettlementFeeRow>> buildFeeRowsByJoinKey(List<SettlementFeeRow> rows) {
         Map<String, List<SettlementFeeRow>> result = new HashMap<>();
         for (SettlementFeeRow row : rows) {
-            String joinKey = resolveJoinKey(row.getProductOrderNo(), row.getOrderNo());
+            String joinKey = SettlementJoinKeyResolver.resolve(
+                    row.getProductOrderNo(),
+                    row.getOrderNo()
+            );
             if (isBlank(joinKey)) {
                 continue;
             }
@@ -851,16 +870,6 @@ public class SettlementOrderSnapshotService {
                 joinKey,
                 message
         ));
-    }
-
-    private String resolveJoinKey(String productOrderNo, String orderNo) {
-        if (!isBlank(productOrderNo)) {
-            return "P:" + productOrderNo.trim();
-        }
-        if (!isBlank(orderNo)) {
-            return "O:" + orderNo.trim();
-        }
-        return null;
     }
 
     private BigDecimal resolveOrderCommissionAmount(SettlementOrderRow orderRow) {

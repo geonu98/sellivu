@@ -16,8 +16,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.sellivu.backend.global.security.CustomUserPrincipal;
 
-import java.lang.reflect.Method;
+
 import java.util.List;
 
 @Service
@@ -161,41 +162,19 @@ public class SettlementAnalysisSetService {
 
 
 
-
     private Long resolveUserId(Long userId) {
         if (userId != null) {
             return userId;
         }
 
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || authentication.getPrincipal() == null) {
+        if (authentication == null) {
             return null;
         }
 
         Object principal = authentication.getPrincipal();
-
-        try {
-            Method getter = principal.getClass().getMethod("getUserId");
-            Object value = getter.invoke(principal);
-            if (value instanceof Long longValue) {
-                return longValue;
-            }
-            if (value instanceof Number number) {
-                return number.longValue();
-            }
-        } catch (Exception ignored) {
-        }
-
-        try {
-            Method getter = principal.getClass().getMethod("getId");
-            Object value = getter.invoke(principal);
-            if (value instanceof Long longValue) {
-                return longValue;
-            }
-            if (value instanceof Number number) {
-                return number.longValue();
-            }
-        } catch (Exception ignored) {
+        if (principal instanceof CustomUserPrincipal customUserPrincipal) {
+            return customUserPrincipal.getUserId();
         }
 
         return null;
