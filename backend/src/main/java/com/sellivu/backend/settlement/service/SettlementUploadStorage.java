@@ -45,6 +45,29 @@ public class SettlementUploadStorage {
         }
     }
 
+    public void delete(String storedFileName) {
+        if (storedFileName == null || storedFileName.isBlank()) {
+            return;
+        }
+
+        Path targetPath = uploadRootPath.resolve(storedFileName).normalize();
+
+        try {
+            Files.deleteIfExists(targetPath);
+        } catch (IOException e) {
+            throw new IllegalStateException("정산 업로드 파일 삭제 중 오류가 발생했습니다. storedFileName=" + storedFileName, e);
+        }
+    }
+
+    public boolean exists(String storedFileName) {
+        if (storedFileName == null || storedFileName.isBlank()) {
+            return false;
+        }
+
+        Path targetPath = uploadRootPath.resolve(storedFileName).normalize();
+        return Files.exists(targetPath);
+    }
+
     private void createDirectoryIfNeeded() {
         try {
             Files.createDirectories(uploadRootPath);

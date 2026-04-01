@@ -107,6 +107,17 @@ public class SettlementUpload {
         this.analysisJobId = analysisJobId;
     }
 
+    public void replaceStoredFile(String originalFileName, String storedFileName, SettlementFileType fileType) {
+        this.originalFileName = originalFileName;
+        this.storedFileName = storedFileName;
+        this.fileType = fileType;
+        this.status = SettlementUploadStatus.UPLOADED;
+        this.errorMessage = null;
+        this.failedAt = null;
+        this.parsedAt = null;
+        this.analysisJobId = null;
+    }
+
     public Long getId() {
         return id;
     }

@@ -2,18 +2,21 @@ package com.sellivu.backend.settlement.service;
 
 import com.sellivu.backend.settlement.domain.SettlementDailyRow;
 import lombok.RequiredArgsConstructor;
-import org.springframework.jdbc.core.BatchPreparedStatementSetter;
+import lombok.extern.slf4j.Slf4j;
+import org.postgresql.PGConnection;
+import org.postgresql.copy.CopyManager;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.io.BufferedWriter;
+import java.io.IOException;
 import java.math.BigDecimal;
-import java.sql.Date;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
-import java.sql.Timestamp;
+import java.sql.Connection;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class SettlementDailyRawBatchWriter {
@@ -24,9 +27,10 @@ public class SettlementDailyRawBatchWriter {
         if (rows == null || rows.isEmpty()) {
             return 0;
         }
+        long totalStart = System.currentTimeMillis();
 
-        String sql = """
-                INSERT INTO settlement_daily_raw (
+        String copySql = """
+                COPY settlement_daily_raw (
                     run_id,
                     upload_id,
                     row_no,
@@ -45,74 +49,136 @@ public class SettlementDailyRawBatchWriter {
                     preferred_fee_refund_amount,
                     settlement_method,
                     created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                )
+                FROM STDIN WITH (FORMAT csv)
                 """;
 
         LocalDateTime now = LocalDateTime.now();
+        String createdAtText = toText(now);
 
-        int[] result = jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
-            @Override
-            public void setValues(PreparedStatement ps, int i) throws SQLException {
-                SettlementDailyRow row = rows.get(i);
+        log.info(
+                "[PERF] rawDaily copy payload build runId={} rows={} chars={} took={}ms source=stream",
+                runId,
+                rows.size(),
+                -1,
+                0
+        );
+        log.info(
+                "[PERF] rawDaily copy encode runId={} rows={} bytes={} took={}ms source=stream",
+                runId,
+                rows.size(),
+                -1,
+                0
+        );
 
-                ps.setLong(1, runId);
-                setLong(ps, 2, row.getUploadId());
-                setInteger(ps, 3, row.getRowNo());
-                setLocalDate(ps, 4, row.getSettlementScheduledDate());
-                setLocalDate(ps, 5, row.getSettlementCompletedDate());
-                setBigDecimal(ps, 6, row.getSettlementAmount());
-                setBigDecimal(ps, 7, row.getGeneralSettlementAmount());
-                setBigDecimal(ps, 8, row.getFastSettlementAmount());
-                setBigDecimal(ps, 9, row.getSettlementBaseAmount());
-                setBigDecimal(ps, 10, row.getTotalFeeAmount());
-                setBigDecimal(ps, 11, row.getBenefitSettlementAmount());
-                setBigDecimal(ps, 12, row.getDailyDeductionRefundAmount());
-                setBigDecimal(ps, 13, row.getHoldAmount());
-                setBigDecimal(ps, 14, row.getBizWalletOffsetAmount());
-                setBigDecimal(ps, 15, row.getSafeReturnCareCost());
-                setBigDecimal(ps, 16, row.getPreferredFeeRefundAmount());
-                ps.setString(17, row.getSettlementMethod());
-                ps.setTimestamp(18, Timestamp.valueOf(now));
-            }
-
-            @Override
-            public int getBatchSize() {
+        return jdbcTemplate.execute((Connection connection) -> {
+            try {
+                PGConnection pgConnection = connection.unwrap(PGConnection.class);
+                CopyManager copyManager = pgConnection.getCopyAPI();
+                long copyInStart = System.currentTimeMillis();
+                CopyStreamSupport.copyIn(copyManager, copySql, writer -> writeRows(writer, runId, rows, createdAtText));
+                log.info(
+                        "[PERF] rawDaily copy copyIn runId={} rows={} took={}ms",
+                        runId,
+                        rows.size(),
+                        System.currentTimeMillis() - copyInStart
+                );
+                log.info(
+                        "[PERF] rawDaily writer total runId={} rows={} took={}ms",
+                        runId,
+                        rows.size(),
+                        System.currentTimeMillis() - totalStart
+                );
                 return rows.size();
+            } catch (Exception e) {
+                throw new RuntimeException("settlement_daily_raw COPY insert failed", e);
             }
         });
-
-        return result.length;
     }
 
-    private void setLong(PreparedStatement ps, int index, Long value) throws SQLException {
-        if (value == null) {
-            ps.setNull(index, java.sql.Types.BIGINT);
-        } else {
-            ps.setLong(index, value);
+    private void writeRows(BufferedWriter writer, Long runId, List<SettlementDailyRow> rows, String createdAtText) throws IOException {
+        for (SettlementDailyRow row : rows) {
+            appendCsv(writer, runId);
+            writer.write(',');
+            appendCsv(writer, row.getUploadId());
+            writer.write(',');
+            appendCsv(writer, row.getRowNo());
+            writer.write(',');
+            appendCsv(writer, row.getSettlementScheduledDate());
+            writer.write(',');
+            appendCsv(writer, row.getSettlementCompletedDate());
+            writer.write(',');
+            appendCsv(writer, row.getSettlementAmount());
+            writer.write(',');
+            appendCsv(writer, row.getGeneralSettlementAmount());
+            writer.write(',');
+            appendCsv(writer, row.getFastSettlementAmount());
+            writer.write(',');
+            appendCsv(writer, row.getSettlementBaseAmount());
+            writer.write(',');
+            appendCsv(writer, row.getTotalFeeAmount());
+            writer.write(',');
+            appendCsv(writer, row.getBenefitSettlementAmount());
+            writer.write(',');
+            appendCsv(writer, row.getDailyDeductionRefundAmount());
+            writer.write(',');
+            appendCsv(writer, row.getHoldAmount());
+            writer.write(',');
+            appendCsv(writer, row.getBizWalletOffsetAmount());
+            writer.write(',');
+            appendCsv(writer, row.getSafeReturnCareCost());
+            writer.write(',');
+            appendCsv(writer, row.getPreferredFeeRefundAmount());
+            writer.write(',');
+            appendCsv(writer, row.getSettlementMethod());
+            writer.write(',');
+            appendCsvText(writer, createdAtText);
+            writer.write('\n');
         }
     }
 
-    private void setInteger(PreparedStatement ps, int index, Integer value) throws SQLException {
+    private void appendCsv(BufferedWriter writer, Object value) throws IOException {
         if (value == null) {
-            ps.setNull(index, java.sql.Types.INTEGER);
-        } else {
-            ps.setInt(index, value);
+            return;
         }
+
+        appendCsvText(writer, toText(value));
     }
 
-    private void setLocalDate(PreparedStatement ps, int index, java.time.LocalDate value) throws SQLException {
-        if (value == null) {
-            ps.setNull(index, java.sql.Types.DATE);
-        } else {
-            ps.setDate(index, Date.valueOf(value));
+    private void appendCsvText(BufferedWriter writer, String text) throws IOException {
+        boolean needsQuotes =
+                text.indexOf(',') >= 0 ||
+                        text.indexOf('"') >= 0 ||
+                        text.indexOf('\n') >= 0 ||
+                        text.indexOf('\r') >= 0;
+
+        if (!needsQuotes) {
+            writer.write(text);
+            return;
         }
+
+        writer.write('"');
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (ch == '"') {
+                writer.write("\"\"");
+            } else {
+                writer.write(ch);
+            }
+        }
+        writer.write('"');
     }
 
-    private void setBigDecimal(PreparedStatement ps, int index, BigDecimal value) throws SQLException {
-        if (value == null) {
-            ps.setNull(index, java.sql.Types.NUMERIC);
-        } else {
-            ps.setBigDecimal(index, value);
+    private String toText(Object value) {
+        if (value instanceof BigDecimal decimal) {
+            return decimal.toPlainString();
         }
+        if (value instanceof LocalDate localDate) {
+            return localDate.toString();
+        }
+        if (value instanceof LocalDateTime localDateTime) {
+            return localDateTime.toString().replace('T', ' ');
+        }
+        return String.valueOf(value);
     }
 }

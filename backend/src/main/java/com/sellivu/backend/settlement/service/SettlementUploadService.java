@@ -40,8 +40,7 @@ public class SettlementUploadService {
             validateFile(file);
 
             long parseStart = System.currentTimeMillis();
-            SettlementParseFacade.ParsedSettlementFile parsedFile =
-                    settlementParseFacade.parse(file);
+            SettlementParseFacade.ParsedSettlementFile parsedFile = settlementParseFacade.parse(file);
             log.info("[PERF] upload.parse originalFileName={} fileType={} took={}ms",
                     file.getOriginalFilename(),
                     parsedFile.parseResult().getFileType(),
@@ -51,12 +50,23 @@ public class SettlementUploadService {
             String fileHash = parsedFile.fileHash();
 
             long duplicateCheckStart = System.currentTimeMillis();
-            settlementUploadRepository.findByFileHash(fileHash)
-                    .ifPresent(existing -> {
-                        throw new DuplicateSettlementUploadException(
-                                "이미 분석된 파일입니다. uploadId=" + existing.getId()
-                        );
-                    });
+            Optional<SettlementUpload> existing = settlementUploadRepository.findByFileHash(fileHash);
+            if (existing.isPresent()) {
+                SettlementUpload existingUpload = existing.get();
+                if (settlementUploadStorage.exists(existingUpload.getStoredFileName())) {
+                    throw new DuplicateSettlementUploadException(
+                            "이미 분석된 파일입니다. uploadId=" + existingUpload.getId()
+                    );
+                }
+
+                SettlementUpload restoredUpload = restoreMissingStoredFile(file, parsedFile, existingUpload);
+                log.info("[PERF] upload.restoreMissingFile fileType={} uploadId={} took={}ms",
+                        parsedFile.parseResult().getFileType(),
+                        restoredUpload.getId(),
+                        System.currentTimeMillis() - duplicateCheckStart
+                );
+                return SettlementUploadResponse.from(restoredUpload, "정산 파일 업로드가 완료되었습니다.");
+            }
             log.info("[PERF] upload.duplicateCheck fileType={} took={}ms",
                     parsedFile.parseResult().getFileType(),
                     System.currentTimeMillis() - duplicateCheckStart
@@ -83,14 +93,16 @@ public class SettlementUploadService {
     public SettlementUpload getOrCreateUpload(MultipartFile file) {
         validateFile(file);
 
-        SettlementParseFacade.ParsedSettlementFile parsedFile =
-                settlementParseFacade.parse(file);
-
+        SettlementParseFacade.ParsedSettlementFile parsedFile = settlementParseFacade.parse(file);
         String fileHash = parsedFile.fileHash();
 
         Optional<SettlementUpload> existing = settlementUploadRepository.findByFileHash(fileHash);
         if (existing.isPresent()) {
-            return existing.get();
+            SettlementUpload existingUpload = existing.get();
+            if (settlementUploadStorage.exists(existingUpload.getStoredFileName())) {
+                return existingUpload;
+            }
+            return restoreMissingStoredFile(file, parsedFile, existingUpload);
         }
 
         return saveNewUpload(file, parsedFile);
@@ -140,6 +152,27 @@ public class SettlementUploadService {
         );
 
         return upload;
+    }
+
+    private SettlementUpload restoreMissingStoredFile(
+            MultipartFile file,
+            SettlementParseFacade.ParsedSettlementFile parsedFile,
+            SettlementUpload existingUpload
+    ) {
+        long storeStart = System.currentTimeMillis();
+        String storedFileName = settlementUploadStorage.store(file);
+        log.info("[PERF] upload.restoreStore fileType={} uploadId={} took={}ms",
+                parsedFile.parseResult().getFileType(),
+                existingUpload.getId(),
+                System.currentTimeMillis() - storeStart
+        );
+
+        existingUpload.replaceStoredFile(
+                Objects.requireNonNullElse(file.getOriginalFilename(), "unknown"),
+                storedFileName,
+                parsedFile.parseResult().getFileType()
+        );
+        return settlementUploadRepository.save(existingUpload);
     }
 
     private void validateFile(MultipartFile file) {
