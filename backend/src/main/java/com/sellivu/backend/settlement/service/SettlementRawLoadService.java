@@ -24,8 +24,6 @@ public class SettlementRawLoadService {
     private final SettlementUploadRepository settlementUploadRepository;
     private final SettlementUploadStorage settlementUploadStorage;
     private final SettlementParseFacade settlementParseFacade;
-    private final SettlementOrderRowMapper settlementOrderRowMapper;
-    private final SettlementFeeRowMapper settlementFeeRowMapper;
     private final SettlementOrderRawBatchWriter settlementOrderRawBatchWriter;
     private final SettlementFeeRawBatchWriter settlementFeeRawBatchWriter;
     private final SettlementDailyRowMapper settlementDailyRowMapper;
@@ -41,7 +39,15 @@ public class SettlementRawLoadService {
             throw new IllegalArgumentException("ORDER_SETTLEMENT 파일이 아닙니다. uploadId=" + uploadId);
         }
 
+        long openStreamStart = System.currentTimeMillis();
         try (InputStream inputStream = settlementUploadStorage.openStream(upload.getStoredFileName())) {
+            log.info(
+                    "[PERF] rawLoad.openOrderStream runId={} uploadId={} took={}ms",
+                    runId,
+                    uploadId,
+                    System.currentTimeMillis() - openStreamStart
+            );
+
             long parseStart = System.currentTimeMillis();
             SettlementParseFacade.ParsedSettlementFile parsedFile =
                     settlementParseFacade.parse(upload.getOriginalFileName(), inputStream);
@@ -53,31 +59,44 @@ public class SettlementRawLoadService {
                     System.currentTimeMillis() - parseStart
             );
 
+            long castStart = System.currentTimeMillis();
             List<SettlementParsedRow> parsedRows = castParsedRows(parsedFile.parseResult().getRows());
+            log.info(
+                    "[PERF] rawLoad.castOrderRows runId={} uploadId={} rowCount={} took={}ms",
+                    runId,
+                    uploadId,
+                    parsedRows.size(),
+                    System.currentTimeMillis() - castStart
+            );
 
             int totalInserted = 0;
             int chunkIndex = 0;
 
             for (int start = 0; start < parsedRows.size(); start += CHUNK_SIZE) {
+                long chunkSliceStart = System.currentTimeMillis();
                 int end = Math.min(start + CHUNK_SIZE, parsedRows.size());
                 List<SettlementParsedRow> chunk = parsedRows.subList(start, end);
+                log.info(
+                        "[PERF] rawLoad.sliceOrderChunk runId={} uploadId={} chunk={} rows={} took={}ms",
+                        runId,
+                        uploadId,
+                        chunkIndex,
+                        chunk.size(),
+                        System.currentTimeMillis() - chunkSliceStart
+                );
 
                 long mapStart = System.currentTimeMillis();
-                List<SettlementOrderRow> rows = new ArrayList<>(chunk.size());
-                for (SettlementParsedRow parsedRow : chunk) {
-                    rows.add(settlementOrderRowMapper.map(uploadId, parsedRow));
-                }
                 log.info(
                         "[PERF] rawLoad.mapOrderChunk runId={} uploadId={} chunk={} rows={} took={}ms",
                         runId,
                         uploadId,
                         chunkIndex,
-                        rows.size(),
+                        chunk.size(),
                         System.currentTimeMillis() - mapStart
                 );
 
                 long writeStart = System.currentTimeMillis();
-                int inserted = settlementOrderRawBatchWriter.write(runId, rows);
+                int inserted = settlementOrderRawBatchWriter.writeParsed(runId, uploadId, chunk);
                 totalInserted += inserted;
                 log.info(
                         "[PERF] rawLoad.writeOrderChunk runId={} uploadId={} chunk={} inserted={} took={}ms",
@@ -115,7 +134,15 @@ public class SettlementRawLoadService {
             throw new IllegalArgumentException("FEE_DETAIL 파일이 아닙니다. uploadId=" + uploadId);
         }
 
+        long openStreamStart = System.currentTimeMillis();
         try (InputStream inputStream = settlementUploadStorage.openStream(upload.getStoredFileName())) {
+            log.info(
+                    "[PERF] rawLoad.openFeeStream runId={} uploadId={} took={}ms",
+                    runId,
+                    uploadId,
+                    System.currentTimeMillis() - openStreamStart
+            );
+
             long parseStart = System.currentTimeMillis();
             SettlementParseFacade.ParsedSettlementFile parsedFile =
                     settlementParseFacade.parse(upload.getOriginalFileName(), inputStream);
@@ -127,31 +154,44 @@ public class SettlementRawLoadService {
                     System.currentTimeMillis() - parseStart
             );
 
+            long castStart = System.currentTimeMillis();
             List<SettlementParsedRow> parsedRows = castParsedRows(parsedFile.parseResult().getRows());
+            log.info(
+                    "[PERF] rawLoad.castFeeRows runId={} uploadId={} rowCount={} took={}ms",
+                    runId,
+                    uploadId,
+                    parsedRows.size(),
+                    System.currentTimeMillis() - castStart
+            );
 
             int totalInserted = 0;
             int chunkIndex = 0;
 
             for (int start = 0; start < parsedRows.size(); start += CHUNK_SIZE) {
+                long chunkSliceStart = System.currentTimeMillis();
                 int end = Math.min(start + CHUNK_SIZE, parsedRows.size());
                 List<SettlementParsedRow> chunk = parsedRows.subList(start, end);
+                log.info(
+                        "[PERF] rawLoad.sliceFeeChunk runId={} uploadId={} chunk={} rows={} took={}ms",
+                        runId,
+                        uploadId,
+                        chunkIndex,
+                        chunk.size(),
+                        System.currentTimeMillis() - chunkSliceStart
+                );
 
                 long mapStart = System.currentTimeMillis();
-                List<SettlementFeeRow> rows = new ArrayList<>(chunk.size());
-                for (SettlementParsedRow parsedRow : chunk) {
-                    rows.add(settlementFeeRowMapper.map(uploadId, parsedRow));
-                }
                 log.info(
                         "[PERF] rawLoad.mapFeeChunk runId={} uploadId={} chunk={} rows={} took={}ms",
                         runId,
                         uploadId,
                         chunkIndex,
-                        rows.size(),
+                        chunk.size(),
                         System.currentTimeMillis() - mapStart
                 );
 
                 long writeStart = System.currentTimeMillis();
-                int inserted = settlementFeeRawBatchWriter.write(runId, rows);
+                int inserted = settlementFeeRawBatchWriter.writeParsed(runId, uploadId, chunk);
                 totalInserted += inserted;
                 log.info(
                         "[PERF] rawLoad.writeFeeChunk runId={} uploadId={} chunk={} inserted={} took={}ms",
@@ -195,7 +235,15 @@ public class SettlementRawLoadService {
             throw new IllegalArgumentException("DAILY_SETTLEMENT 파일이 아닙니다. uploadId=" + uploadId);
         }
 
+        long openStreamStart = System.currentTimeMillis();
         try (InputStream inputStream = settlementUploadStorage.openStream(upload.getStoredFileName())) {
+            log.info(
+                    "[PERF] rawLoad.openDailyStream runId={} uploadId={} took={}ms",
+                    runId,
+                    uploadId,
+                    System.currentTimeMillis() - openStreamStart
+            );
+
             long parseStart = System.currentTimeMillis();
             SettlementParseFacade.ParsedSettlementFile parsedFile =
                     settlementParseFacade.parse(upload.getOriginalFileName(), inputStream);
@@ -208,14 +256,31 @@ public class SettlementRawLoadService {
                     System.currentTimeMillis() - parseStart
             );
 
+            long castStart = System.currentTimeMillis();
             List<SettlementParsedRow> parsedRows = castParsedRows(parsedFile.parseResult().getRows());
+            log.info(
+                    "[PERF] rawLoad.castDailyRows runId={} uploadId={} rowCount={} took={}ms",
+                    runId,
+                    uploadId,
+                    parsedRows.size(),
+                    System.currentTimeMillis() - castStart
+            );
 
             int totalInserted = 0;
             int chunkIndex = 0;
 
             for (int start = 0; start < parsedRows.size(); start += CHUNK_SIZE) {
+                long chunkSliceStart = System.currentTimeMillis();
                 int end = Math.min(start + CHUNK_SIZE, parsedRows.size());
                 List<SettlementParsedRow> chunk = parsedRows.subList(start, end);
+                log.info(
+                        "[PERF] rawLoad.sliceDailyChunk runId={} uploadId={} chunk={} rows={} took={}ms",
+                        runId,
+                        uploadId,
+                        chunkIndex,
+                        chunk.size(),
+                        System.currentTimeMillis() - chunkSliceStart
+                );
 
                 long mapStart = System.currentTimeMillis();
                 List<SettlementDailyRow> rows = new ArrayList<>(chunk.size());

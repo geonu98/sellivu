@@ -2,7 +2,6 @@ package com.sellivu.backend.settlement.domain;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -145,7 +144,6 @@ public class SettlementOrderSnapshot {
     @Column(nullable = false)
     private LocalDateTime lastAggregatedAt;
 
-    @Builder
     private SettlementOrderSnapshot(
             Long runId,
             String joinKey,
@@ -248,45 +246,117 @@ public class SettlementOrderSnapshot {
             boolean settlementAmountMatched,
             boolean commissionAmountMatched,
             boolean netAmountMatched,
+            long issueMask,
+            int issueCount,
+            String primaryIssueCode,
+            String issuePayload,
+            boolean refundCandidate,
+            boolean needsUserInput
+    ) {
+        return new SettlementOrderSnapshot(
+                runId,
+                joinKey,
+                orderNo,
+                productOrderNo,
+                matchStatus,
+                orderRowId,
+                feeRowId,
+                orderUploadId,
+                feeUploadId,
+                productName,
+                optionName,
+                sellerProductCode,
+                sellerOptionCode,
+                paidAt,
+                settlementDate,
+                orderSettlementAmount,
+                orderCommissionAmount,
+                orderNetAmount,
+                feeSettlementAmount,
+                feeCommissionAmount,
+                feeNetAmount,
+                resolvedSettlementAmount,
+                resolvedCommissionAmount,
+                resolvedNetAmount,
+                settlementAmountMatched,
+                commissionAmountMatched,
+                netAmountMatched,
+                issueCount > 0,
+                issueCount,
+                issueMask,
+                primaryIssueCode,
+                issuePayload,
+                refundCandidate,
+                needsUserInput,
+                LocalDateTime.now()
+        );
+    }
+
+    public static SettlementOrderSnapshot create(
+            Long runId,
+            String joinKey,
+            String orderNo,
+            String productOrderNo,
+            MatchStatus matchStatus,
+            Long orderRowId,
+            Long feeRowId,
+            Long orderUploadId,
+            Long feeUploadId,
+            String productName,
+            String optionName,
+            String sellerProductCode,
+            String sellerOptionCode,
+            LocalDate paidAt,
+            LocalDate settlementDate,
+            BigDecimal orderSettlementAmount,
+            BigDecimal orderCommissionAmount,
+            BigDecimal orderNetAmount,
+            BigDecimal feeSettlementAmount,
+            BigDecimal feeCommissionAmount,
+            BigDecimal feeNetAmount,
+            BigDecimal resolvedSettlementAmount,
+            BigDecimal resolvedCommissionAmount,
+            BigDecimal resolvedNetAmount,
+            boolean settlementAmountMatched,
+            boolean commissionAmountMatched,
+            boolean netAmountMatched,
             int issueCount
     ) {
-        return SettlementOrderSnapshot.builder()
-                .runId(runId)
-                .joinKey(joinKey)
-                .orderNo(orderNo)
-                .productOrderNo(productOrderNo)
-                .matchStatus(matchStatus)
-                .orderRowId(orderRowId)
-                .feeRowId(feeRowId)
-                .orderUploadId(orderUploadId)
-                .feeUploadId(feeUploadId)
-                .productName(productName)
-                .optionName(optionName)
-                .sellerProductCode(sellerProductCode)
-                .sellerOptionCode(sellerOptionCode)
-                .paidAt(paidAt)
-                .settlementDate(settlementDate)
-                .orderSettlementAmount(orderSettlementAmount)
-                .orderCommissionAmount(orderCommissionAmount)
-                .orderNetAmount(orderNetAmount)
-                .feeSettlementAmount(feeSettlementAmount)
-                .feeCommissionAmount(feeCommissionAmount)
-                .feeNetAmount(feeNetAmount)
-                .resolvedSettlementAmount(resolvedSettlementAmount)
-                .resolvedCommissionAmount(resolvedCommissionAmount)
-                .resolvedNetAmount(resolvedNetAmount)
-                .settlementAmountMatched(settlementAmountMatched)
-                .commissionAmountMatched(commissionAmountMatched)
-                .netAmountMatched(netAmountMatched)
-                .hasIssue(issueCount > 0)
-                .issueCount(issueCount)
-                .issueMask(0L)
-                .primaryIssueCode(null)
-                .issuePayload(null)
-                .refundCandidate(false)
-                .needsUserInput(false)
-                .lastAggregatedAt(LocalDateTime.now())
-                .build();
+        return create(
+                runId,
+                joinKey,
+                orderNo,
+                productOrderNo,
+                matchStatus,
+                orderRowId,
+                feeRowId,
+                orderUploadId,
+                feeUploadId,
+                productName,
+                optionName,
+                sellerProductCode,
+                sellerOptionCode,
+                paidAt,
+                settlementDate,
+                orderSettlementAmount,
+                orderCommissionAmount,
+                orderNetAmount,
+                feeSettlementAmount,
+                feeCommissionAmount,
+                feeNetAmount,
+                resolvedSettlementAmount,
+                resolvedCommissionAmount,
+                resolvedNetAmount,
+                settlementAmountMatched,
+                commissionAmountMatched,
+                netAmountMatched,
+                0L,
+                issueCount,
+                null,
+                null,
+                false,
+                false
+        );
     }
 
     public void update(

@@ -38,6 +38,26 @@ public class ExcelSettlementReader {
         }
     }
 
+    public ExcelReadResult read(InputStream inputStream) throws IOException {
+        try (Workbook workbook = WorkbookFactory.create(inputStream)) {
+
+            if (workbook.getNumberOfSheets() == 0) {
+                throw new IllegalArgumentException("?묒? ?쒗듃媛 ?놁뒿?덈떎.");
+            }
+
+            Sheet sheet = workbook.getSheetAt(0);
+            ExcelHeaderExtractor.HeaderExtractResult headerResult = headerExtractor.extract(sheet);
+
+            List<String> headers = headerResult.headers();
+            List<SettlementRawRow> rows = extractDataRows(sheet, headerResult.headerRowIndex(), headers);
+
+            return new ExcelReadResult(headers, rows);
+
+        } catch (IOException e) {
+            throw new IllegalStateException("?묒? ?뚯씪???쎈뒗 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.", e);
+        }
+    }
+
     private List<SettlementRawRow> extractDataRows(Sheet sheet, int headerRowIndex, List<String> headers) {
         List<SettlementRawRow> result = new ArrayList<>();
 

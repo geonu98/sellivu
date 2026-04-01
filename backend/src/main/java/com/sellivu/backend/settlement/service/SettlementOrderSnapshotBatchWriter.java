@@ -2,6 +2,7 @@ package com.sellivu.backend.settlement.service;
 
 import com.sellivu.backend.settlement.domain.SettlementOrderSnapshot;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.postgresql.PGConnection;
 import org.postgresql.copy.CopyManager;
 import org.springframework.jdbc.datasource.DataSourceUtils;
@@ -17,6 +18,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class SettlementOrderSnapshotBatchWriter {
@@ -27,6 +29,9 @@ public class SettlementOrderSnapshotBatchWriter {
         if (snapshots == null || snapshots.isEmpty()) {
             return;
         }
+
+        Long runId = snapshots.get(0).getRunId();
+        long totalStart = System.currentTimeMillis();
 
         String copySql = """
                 COPY settlement_order_snapshot (
@@ -67,6 +72,7 @@ public class SettlementOrderSnapshotBatchWriter {
                 )
                 """;
 
+        long buildStart = System.currentTimeMillis();
         StringBuilder sb = new StringBuilder(Math.max(1024, snapshots.size() * 220));
 
         for (SettlementOrderSnapshot item : snapshots) {
@@ -103,16 +109,50 @@ public class SettlementOrderSnapshotBatchWriter {
             appendLast(sb, item.getLastAggregatedAt());
         }
 
+        String payload = sb.toString();
+        log.info(
+                "[PERF] snapshot copy payload build runId={} rows={} chars={} took={}ms",
+                runId,
+                snapshots.size(),
+                payload.length(),
+                System.currentTimeMillis() - buildStart
+        );
+
+        long encodeStart = System.currentTimeMillis();
+        byte[] payloadBytes = payload.getBytes(StandardCharsets.UTF_8);
+        log.info(
+                "[PERF] snapshot copy encode runId={} rows={} bytes={} took={}ms",
+                runId,
+                snapshots.size(),
+                payloadBytes.length,
+                System.currentTimeMillis() - encodeStart
+        );
+
         Connection connection = DataSourceUtils.getConnection(dataSource);
-        try (InputStream inputStream = new ByteArrayInputStream(sb.toString().getBytes(StandardCharsets.UTF_8))) {
+        try (InputStream inputStream = new ByteArrayInputStream(payloadBytes)) {
             PGConnection pgConnection = connection.unwrap(PGConnection.class);
             CopyManager copyManager = pgConnection.getCopyAPI();
+
+            long copyStart = System.currentTimeMillis();
             copyManager.copyIn(copySql, inputStream);
+            log.info(
+                    "[PERF] snapshot copy copyIn runId={} rows={} took={}ms",
+                    runId,
+                    snapshots.size(),
+                    System.currentTimeMillis() - copyStart
+            );
         } catch (Exception e) {
-            throw new RuntimeException("settlement_order_snapshot COPY insert 실패", e);
+            throw new RuntimeException("settlement_order_snapshot COPY insert ?ㅽ뙣", e);
         } finally {
             DataSourceUtils.releaseConnection(connection, dataSource);
         }
+
+        log.info(
+                "[PERF] snapshot writer total runId={} rows={} took={}ms",
+                runId,
+                snapshots.size(),
+                System.currentTimeMillis() - totalStart
+        );
     }
 
     private void append(StringBuilder sb, Object value) {
@@ -130,7 +170,7 @@ public class SettlementOrderSnapshotBatchWriter {
             sb.append("\\N");
             return;
         }
-        sb.append(escapeCopyText(stringify(value)));
+        appendEscapedCopyText(sb, stringify(value));
     }
 
     private String stringify(Object value) {
@@ -141,11 +181,16 @@ public class SettlementOrderSnapshotBatchWriter {
         return String.valueOf(value);
     }
 
-    private String escapeCopyText(String value) {
-        return value
-                .replace("\\", "\\\\")
-                .replace("\t", "\\t")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r");
+    private void appendEscapedCopyText(StringBuilder sb, String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            switch (ch) {
+                case '\\' -> sb.append("\\\\");
+                case '\t' -> sb.append("\\t");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                default -> sb.append(ch);
+            }
+        }
     }
 }

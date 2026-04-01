@@ -15,6 +15,27 @@ import org.springframework.web.multipart.MultipartFile;
 
 public class CsvSettlementReader {
 
+    public CsvReadResult read(InputStream inputStream) throws IOException {
+        List<String> lines = readLines(inputStream, StandardCharsets.UTF_8);
+
+        if (lines.isEmpty()) {
+            throw new IllegalArgumentException("CSV ?뚯씪??鍮꾩뼱 ?덉뒿?덈떎.");
+        }
+
+        int headerRowIndex = findHeaderRowIndex(lines);
+        if (headerRowIndex < 0) {
+            throw new IllegalArgumentException("CSV ?ㅻ뜑 ?됱쓣 李얠쓣 ???놁뒿?덈떎.");
+        }
+
+        List<String> headers = normalizeHeaders(parseCsvLine(lines.get(headerRowIndex)));
+        if (headers.isEmpty()) {
+            throw new IllegalArgumentException("CSV ?ㅻ뜑媛 鍮꾩뼱 ?덉뒿?덈떎.");
+        }
+
+        List<SettlementRawRow> rows = extractDataRows(lines, headerRowIndex, headers);
+        return new CsvReadResult(headers, rows);
+    }
+
     public CsvReadResult read(MultipartFile file) {
         try {
             List<String> lines = readAllLines(file);
@@ -57,6 +78,19 @@ public class CsvSettlementReader {
         try (InputStream inputStream = new java.io.ByteArrayInputStream(bytes);
              BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, charset))) {
 
+            String line;
+            while ((line = reader.readLine()) != null) {
+                lines.add(removeBom(line));
+            }
+        }
+
+        return lines;
+    }
+
+    private List<String> readLines(InputStream inputStream, Charset charset) throws IOException {
+        List<String> lines = new ArrayList<>();
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, charset))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 lines.add(removeBom(line));

@@ -13,6 +13,8 @@ public interface SettlementOrderRawRepository extends JpaRepository<SettlementOr
 
     List<SettlementOrderRaw> findAllByRunIdOrderByIdAsc(Long runId);
 
+    List<SettlementOrderRawSnapshotView> findProjectedByRunIdOrderByIdAsc(Long runId);
+
     long countByRunId(Long runId);
 
     void deleteAllByRunId(Long runId);

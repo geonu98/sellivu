@@ -12,6 +12,8 @@ public interface SettlementFeeRawRepository extends JpaRepository<SettlementFeeR
 
     List<SettlementFeeRaw> findAllByRunIdOrderByIdAsc(Long runId);
 
+    List<SettlementFeeRawSnapshotView> findProjectedByRunIdOrderByIdAsc(Long runId);
+
     long countByRunId(Long runId);
 
     void deleteAllByRunId(Long runId);

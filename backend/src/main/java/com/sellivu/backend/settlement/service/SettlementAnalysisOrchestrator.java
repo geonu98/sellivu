@@ -12,6 +12,7 @@ public class SettlementAnalysisOrchestrator {
 
     private final SettlementAnalysisRunService settlementAnalysisRunService;
     private final SettlementAnalysisStepService settlementAnalysisStepService;
+    private final SettlementTestCleanupService settlementTestCleanupService;
 
     public Long startRawLoading(
             Long workspaceId,
@@ -143,6 +144,14 @@ public class SettlementAnalysisOrchestrator {
                     workspaceId,
                     runId,
                     System.currentTimeMillis() - activateRunStart
+            );
+
+            long testCleanupStart = System.currentTimeMillis();
+            settlementTestCleanupService.cleanupAfterSuccessfulRun(run);
+            log.info(
+                    "[PERF] orchestrator.testCleanup runId={} took={}ms",
+                    runId,
+                    System.currentTimeMillis() - testCleanupStart
             );
 
             log.info(

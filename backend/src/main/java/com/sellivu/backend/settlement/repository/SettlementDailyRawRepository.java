@@ -16,6 +16,8 @@ public interface SettlementDailyRawRepository extends JpaRepository<SettlementDa
 
     long countByRunId(Long runId);
 
+    void deleteAllByRunId(Long runId);
+
     List<SettlementDailyRaw> findAllByRunIdOrderBySettlementCompletedDateAscIdAsc(Long runId);
 
     @Query(value = """
